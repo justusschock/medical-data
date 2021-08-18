@@ -1,5 +1,5 @@
 import json
-from typing import Any, Callable, Mapping
+from typing import Any, Mapping
 import torch
 from pytorch_lightning.utilities.apply_func import apply_to_collection
 
