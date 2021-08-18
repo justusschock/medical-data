@@ -35,10 +35,11 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         load_getitem: bool = True,
         get_classes_key: Optional[str] = "label",
         get_stats_key: Optional[str] = "data",
+        median_spacing: Optional[Sequence[float]] = None,
+        median_size: Optional[Sequence[int]] = None,
         anisotropy_threshold: int = 3,
         num_saving_procs: Optional[int] = 1,
         verbose: bool = False,
-        disable_multi_proc_preprocessing: bool = False,
         crop_to_nonzero_stats: bool = True,
     ):
         restored = False
@@ -78,8 +79,14 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         self._classes = None
         self._intensity_values = None
 
-        self._median_spacing = None
-        self._median_size = None
+        if median_spacing is not None and not isinstance(median_spacing, torch.Tensor):
+            median_spacing = torch.tensor(median_spacing)
+
+        if median_size is not None and not isinstance(median_size, torch.Tensor):
+            median_size = torch.tensor(median_size)
+            
+        self._median_spacing = median_spacing
+        self._median_size = median_size
         self._median_size_after_resampling = None
         self._max_size_after_resampling = None
         self._min_size_after_resampling = None
