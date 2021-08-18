@@ -2,10 +2,11 @@ from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from collections import Counter
 from typing import Optional, Tuple, Union, Mapping, Any
+from medical_dl.utils import PyTorchJsonDecoder, PyTorchJsonEncoder
 import torchio as tio
 import torch
-from medical_segmentation.data.modality import ImageModality
-from medical_segmentation.transforms import DefaultPreprocessing, DefaultAugmentation
+from medical_dl.data.modality import ImageModality
+from medical_dl.transforms import CropToNonZero, DefaultPreprocessing, DefaultAugmentation
 import os
 import json
 from packaging.version import Version
@@ -16,7 +17,7 @@ from tqdm import tqdm
 import psutil
 
 if Version(tio.__version__) <= Version("0.18.45"):
-    from medical_segmentation.data.custom_subject import CustomSubject
+    from medical_dl.data.custom_subject import CustomSubject
 
     tio.data.subject.Subject = CustomSubject
     tio.data.Subject = CustomSubject
@@ -24,7 +25,6 @@ if Version(tio.__version__) <= Version("0.18.45"):
 
 
 class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
-
     def __init__(
         self,
         root_path,
@@ -36,7 +36,10 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         get_classes_key: Optional[str] = "label",
         get_stats_key: Optional[str] = "data",
         anisotropy_threshold: int = 3,
-        num_saving_procs: Optional[int] = None,
+        num_saving_procs: Optional[int] = 1,
+        verbose: bool = False,
+        disable_multi_proc_preprocessing: bool = False,
+        crop_to_nonzero_stats: bool = True,
     ):
         restored = False
         restored_meta = {}
@@ -59,7 +62,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
                     f"Number of restored samples ({len(subjects_restored)}) is different from the parsed samples ({len(subjects_parsed)}). Ignoring them and using the parsed ones."
                 )
                 restored = False
-                
+
         if restored:
             subjects = subjects_restored
         else:
@@ -84,6 +87,8 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         self._intensity_std = None
         self._class_mapping = None
         self._num_saving_procs = num_saving_procs
+        self._verbose = verbose
+        self._crop_to_nonzero_stats = crop_to_nonzero_stats
 
         self.image_modality = image_modality
         self.anisotropy_threshold = anisotropy_threshold
@@ -143,9 +148,8 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         if transforms:
             self.set_transform(tio.transforms.Compose(transforms))
 
-    @staticmethod
     @abstractmethod
-    def parse_subjects(root_path):
+    def parse_subjects(self, root_path):
         raise NotImplementedError
 
     def _parse_stats(self, get_stats_key, get_classes_key: Optional[str]):
@@ -153,7 +157,11 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         # the dataset may be loaded completely to memory and cached there
         prev_load_getitem = self.load_getitem
         prev_transforms = self._transform
-        self.set_transform(None)
+
+        curr_transform = None
+        if self._crop_to_nonzero_stats:
+            curr_transform = CropToNonZero()
+        self.set_transform(curr_transform)
 
         self.load_getitem = False
         if self._spacings is None:
@@ -180,7 +188,16 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         else:
             add_intensity_values = False
 
-        for sub in self:
+        # no values to add, return early
+        if not any((add_spacings, add_sizes, add_classes, add_intensity_values)):
+            return
+
+        iterable = self
+
+        if self._verbose:
+            iterable = tqdm(iterable, desc="Computing Dataset Statistics")
+
+        for sub in iterable:
             assert isinstance(sub, tio.Subject)
             new_sub = deepcopy(sub)
             if add_spacings:
@@ -200,7 +217,14 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
                 and get_classes_key is not None
                 and get_classes_key in new_sub
             ):
-                self._classes.update(new_sub[get_classes_key].tensor.unique().tolist())
+                if isinstance(new_sub[get_classes_key], tio.data.Image):
+                    self._classes.update(
+                        new_sub[get_classes_key].tensor.unqiue().tolist()
+                    )
+                elif isinstance(new_sub[get_classes_key], torch.Tensor):
+                    self._classes.update(new_sub[get_classes_key].unique().tolist())
+                else:
+                    self._classes.update(list(set(new_sub[get_classes_key])))
 
             if (
                 add_intensity_values
@@ -255,8 +279,6 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
     def median_spacing(self):
         if self._median_spacing is None:
             self._median_spacing = torch.median(self.all_spacings, 0).values
-
-            self._spacings = None
 
         return self._median_spacing
 
@@ -317,7 +339,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
     def class_mapping(self):
         if self._class_mapping is None:
             self._parse_stats(self._get_stats_key, self._get_classes_key)
-            self._class_mapping = {x: i for i, x in enumerate(self._classes)}
+            self._class_mapping = {x: i for i, x in enumerate(sorted(self._classes))}
         return self._class_mapping
 
     @class_mapping.setter
@@ -336,7 +358,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
     def default_preprocessing(self):
         return DefaultPreprocessing(
             num_classes=self.num_classes,
-            target_spacing=self.median_spacing.tolist(),
+            target_spacing=self.target_spacing.tolist(),
             target_size=self.median_size.tolist(),
             modality=self.image_modality,
             dataset_intensity_mean=self.mean_intensity_value,
@@ -437,12 +459,13 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
         for k, v in sub.items():
             if not isinstance(v, tio.data.Image):
+                
                 sub_dict[k] = v
 
         with open(os.path.join(path, str(idx), "subject.json"), "w") as f:
-            json.dump(sub_dict, f, indent=4, sort_keys=True)
+            json.dump(sub_dict, f, indent=4, sort_keys=True, cls=PyTorchJsonEncoder)
 
-    def _save_preprocessed(self, path: str, verbose: bool = True):
+    def _save_preprocessed(self, path: str):
         os.makedirs(path, exist_ok=True)
 
         func = partial(self._save_preprocessed_single_subject, path=path)
@@ -451,8 +474,8 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
         # if saving_procs is 1, there is no need for a separate process; this would only increase the overhead
         if 0 <= self.num_saving_procs <= 1:
-            if verbose:
-                iterable = tqdm(iterable)
+            if self._verbose:
+                iterable = tqdm(iterable, desc="Saving Preprocessed Dataset")
             for i in iterable:
                 func(i)
 
@@ -460,8 +483,10 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
             with torch.multiprocessing.Pool(self.num_saving_procs) as p:
                 iter = p.imap(func, iterable)
-                if verbose:
-                    iter = tqdm(iter, total=len(self))
+                if self._verbose:
+                    iter = tqdm(
+                        iter, total=len(self), desc="Saving Preprocessed Dataset"
+                    )
 
                 _ = list(iter)
 
@@ -486,12 +511,13 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
                 f,
                 indent=4,
                 sort_keys=True,
+                cls=PyTorchJsonEncoder
             )
 
     @staticmethod
     def _restore_from_preprocessed(path):
         with open(os.path.join(path, "dataset.json"), "r") as f:
-            dset_meta = json.load(f)
+            dset_meta = json.load(f, cls=PyTorchJsonDecoder)
 
         subjects = []
         subs = [
@@ -502,7 +528,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         for sub in subs:
             # load information about subject
             with open(os.path.join(sub, "subject.json"), "r") as f:
-                subject_meta = json.load(f)
+                subject_meta = json.load(f, cls=PyTorchJsonDecoder)
 
             # load images and other vals
             subject = {}
@@ -547,21 +573,26 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
     @property
     def num_saving_procs(self) -> int:
         if self._num_saving_procs is None:
-            # this is only a very rough approximation. It assumes the main memory occupation comes from images.
+            # this is only a very rough approximation. It assumes the main memory occupation comes from images
+            # and that they will all be resampled to the same size.
             # it omits the overhead of the current dataset (without the images) which may be pickled (partially) as well.
-            # it also omits that during the processing, additional memory might be required.
+            # it also assumes the additional memory during processing to be a maximum of 1.5 times the image memory
             num_voxels = torch.prod(self.median_size_after_resampling)
-            num_mem_per_image = num_voxels * 32 # images are likely to be 32-bit
+            num_mem_per_image = num_voxels * 32  # images are likely to be 32-bit
             dummy_sub = self._subjects[0]
             assert isinstance(dummy_sub, tio.data.Subject)
             num_images = len(dummy_sub.get_images_names())
 
             total_mem_per_sub = num_mem_per_image * num_images
 
-            available_mem = psutil.virtual_memory().available + psutil.swap_memory().free
-            saving_procs = max(1, int(available_mem / total_mem_per_sub))
+            available_mem = (
+                psutil.virtual_memory().available + psutil.swap_memory().free
+            )
+            # use factor of 1.5 to factor in some memory reserves for processing. Otherwise it was crashing...
+            saving_procs = min(
+                max(1, int(available_mem / (total_mem_per_sub * 1.5))), len(self)
+            )
 
             return saving_procs
 
         return self._num_saving_procs
-
