@@ -2,11 +2,11 @@ from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from collections import Counter
 from typing import Optional, Tuple, Union, Mapping, Any
-from mdu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder
+from mdlu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder
 import torchio as tio
 import torch
-from mdu.data.modality import ImageModality
-from mdu.transforms import CropToNonZero, DefaultPreprocessing, DefaultAugmentation
+from mdlu.data.modality import ImageModality
+from mdlu.transforms import CropToNonZero, DefaultPreprocessing, DefaultAugmentation
 import os
 import json
 from packaging.version import Version
@@ -17,7 +17,7 @@ from tqdm import tqdm
 import psutil
 
 if Version(tio.__version__) <= Version("0.18.45"):
-    from mdu.data.custom_subject import CustomSubject
+    from mdlu.data.custom_subject import CustomSubject
 
     tio.data.subject.Subject = CustomSubject
     tio.data.Subject = CustomSubject

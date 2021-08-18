@@ -1,7 +1,7 @@
 from typing import Callable, Optional, Sequence, Tuple, Union
 from SimpleITK.SimpleITK import Crop
 import torchio as tio
-from mdu.data.modality import ImageModality
+from mdlu.data.modality import ImageModality
 import torch
 from torchio.transforms.preprocessing.spatial.copy_affine import CopyAffine
 from torchio.transforms.preprocessing.spatial.resample import Resample
