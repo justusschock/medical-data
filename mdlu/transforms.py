@@ -199,12 +199,12 @@ class NNUnetNormalization(tio.transforms.ZNormalization):
 
             cropped_tensor = self.crop_or_pad_trafo(
                 tio.data.Subject(
-                    {image_name: tio.data.ScalarImage(subject[image_name].data)}
+                    {image_name: tio.data.ScalarImage(tensor=subject[image_name].data)}
                 )
             )[image_name].data
             # masking for foreground
             mask = cropped_tensor > 0
-            values = cropped_tensor[mask]
+            values = cropped_tensor[mask].float()
             mean = values.mean()
             std = values.std()
 
@@ -222,7 +222,7 @@ class NNUnetNormalization(tio.transforms.ZNormalization):
             std = self.dataset_std
 
         image = subject[image_name]
-        tensor = image.data
+        tensor = image.data.to(mean)
         tensor -= mean
         tensor /= std
         image.set_data(tensor)
@@ -278,9 +278,9 @@ class DefaultIntensityAugmentation(tio.transforms.Compose):
     def __init__(self, image_modality: ImageModality, p=0.25):
         trafos = []
 
-        if image_modality is not None and image_modality == ImageModality.MR:
-            trafos.append(tio.transforms.RandomGhosting(p=p))
-            trafos.append(tio.transforms.RandomSpike(p=p))
+        # if image_modality is not None and image_modality == ImageModality.MR:
+            # trafos.append(tio.transforms.RandomGhosting(p=p))
+            # trafos.append(tio.transforms.RandomSpike(p=p))
 
         trafos += [
             tio.transforms.RandomMotion(p=p),

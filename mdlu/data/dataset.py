@@ -1,7 +1,7 @@
 from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from collections import Counter
-from typing import Optional, Tuple, Union, Mapping, Any
+from typing import Optional, Tuple, Union, Mapping, Any, Sequence
 from mdlu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder
 import torchio as tio
 import torch
@@ -102,6 +102,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
         if restored:
             self._restore_meta(restored_meta)
+        self._restored = restored
 
         if (
             preprocessing is not None
@@ -196,7 +197,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             add_intensity_values = False
 
         # no values to add, return early
-        if not any((add_spacings, add_sizes, add_classes, add_intensity_values)):
+        if self._restored or not any((add_spacings, add_sizes, add_classes, add_intensity_values)):
             return
 
         iterable = self
@@ -347,7 +348,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         if self._class_mapping is None:
             self._parse_stats(self._get_stats_key, self._get_classes_key)
             self._class_mapping = {x: i for i, x in enumerate(sorted(self._classes))}
-        return self._class_mapping
+        return self._class_mapping if self._class_mapping else None
 
     @class_mapping.setter
     def class_mapping(self, value):
@@ -359,7 +360,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
     @property
     def num_classes(self):
-        return len(self.class_mapping)
+        return len(self.class_mapping) if self.class_mapping is not None else None
 
     @property
     def default_preprocessing(self):
@@ -374,7 +375,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
     @property
     def default_augmentation(self):
-        return DefaultAugmentation(self.image_modality, include_deformation=False)
+        return DefaultAugmentation(self.image_modality, include_deformation=False, spatial_prob=1, intensity_prob=1)
 
     @property
     def mean_intensity_value(self) -> torch.Tensor:
@@ -446,8 +447,15 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         self, args: Tuple[int, tio.data.Subject], path: str
     ):
         # idx, sub = args
-        idx = args
-        sub = self[idx]
+        # idx = args
+        # sub = self[idx]
+        if isinstance(args, tuple):
+            sub = self._transform(args[1])
+            idx = args[0]
+
+        else:
+            sub = self[args]
+            idx = args
 
         assert isinstance(sub, tio.data.Subject)
         os.makedirs(os.path.join(path, str(idx)), exist_ok=True)
@@ -477,7 +485,8 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
         func = partial(self._save_preprocessed_single_subject, path=path)
 
-        iterable = list(range(len(self)))
+        # iterable = list(range(len(self)))
+        iterable = list(enumerate(self._subjects))
 
         # if saving_procs is 1, there is no need for a separate process; this would only increase the overhead
         if 0 <= self.num_saving_procs <= 1:
