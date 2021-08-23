@@ -1,4 +1,4 @@
-from typing import Callable, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, Optional, Sequence, Tuple, Union
 from SimpleITK.SimpleITK import Crop
 import torchio as tio
 from mdlu.data.modality import ImageModality
@@ -12,11 +12,17 @@ class DefaultSpatialPreIntensityPreprocessingTransforms(tio.transforms.Compose):
         self,
         num_classes,
         target_spacing,
+        class_mapping: Optional[Dict[int, int]] = None,
         interpolation: str = "linear",
     ):
         trafos = [
             CropToNonZero(),
             tio.transforms.ToCanonical(),
+        ]
+
+        if class_mapping is not None:
+            trafos.append(tio.transforms.RemapLabels(class_mapping))
+        trafos = trafos + [
             ResampleOnehot(
                 num_classes=num_classes,
                 target=target_spacing,
@@ -69,6 +75,7 @@ class DefaultPreprocessing(tio.transforms.Compose):
         modality: Optional[Union[int, ImageModality]] = None,
         dataset_intensity_mean: Optional[torch.Tensor] = None,
         dataset_intensity_std: Optional[torch.Tensor] = None,
+        class_mapping: Optional[Dict[int, int]] = None,
         interpolation: str = "linear",
     ):
         trafos = [
@@ -76,6 +83,7 @@ class DefaultPreprocessing(tio.transforms.Compose):
             DefaultSpatialPreIntensityPreprocessingTransforms(
                 num_classes=num_classes,
                 target_spacing=target_spacing,
+                class_mapping=class_mapping,
                 interpolation=interpolation,
             ),
             DefaultIntensityPreprocessing(

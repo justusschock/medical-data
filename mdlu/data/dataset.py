@@ -231,6 +231,8 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
                     )
                 elif isinstance(new_sub[get_classes_key], torch.Tensor):
                     self._classes.update(new_sub[get_classes_key].unique().tolist())
+                elif not isinstance(new_sub[get_classes_key], Sequence):
+                    self._classes.update(list(set([new_sub[get_classes_key]])))
                 else:
                     self._classes.update(list(set(new_sub[get_classes_key])))
 
@@ -369,6 +371,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             target_spacing=self.target_spacing.tolist(),
             target_size=self.median_size.tolist(),
             modality=self.image_modality,
+            class_mapping=self.class_mapping,
             dataset_intensity_mean=self.mean_intensity_value,
             dataset_intensity_std=self.std_intensity_value,
         )
