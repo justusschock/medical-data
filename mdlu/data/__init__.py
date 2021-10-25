@@ -3,5 +3,5 @@ from mdlu.data.modality import ImageModality
 
 __all__ = [
     'AbstractDataset',
-    'ImageModality',
+    'ImageModality'
 ]
