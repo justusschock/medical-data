@@ -1,27 +1,23 @@
-from abc import ABCMeta, abstractmethod
-from copy import deepcopy
-from collections import Counter
-from typing import Optional, Tuple, Union, Mapping, Any, Sequence
-from mdlu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder
-import torchio as tio
-import torch
-from mdlu.data.modality import ImageModality
-from mdlu.transforms import CropToNonZero, DefaultPreprocessing, DefaultAugmentation
-import os
 import json
-from packaging.version import Version
-from functools import partial
-import warnings
+import os
 import shutil
-from tqdm import tqdm
+import warnings
+from abc import ABCMeta, abstractmethod
+from collections import Counter
+from copy import deepcopy
+from functools import partial
+from typing import Any, Mapping, Optional, Sequence, Tuple, Union
+
 import psutil
+import torch
+import torchio as tio
+from mdlu.data.modality import ImageModality
+from mdlu.transforms import (CropToNonZero, DefaultAugmentation,
+                             DefaultPreprocessing)
+from mdlu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder
+from tqdm import tqdm
 
-if Version(tio.__version__) <= Version("0.18.45"):
-    from mdlu.data.custom_subject import CustomSubject
-
-    tio.data.subject.Subject = CustomSubject
-    tio.data.Subject = CustomSubject
-    tio.Subject = CustomSubject
+__all__ = ["AbstractDataset"]
 
 
 class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
@@ -50,12 +46,16 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
                     save_preprocessed
                 )
                 restored = True
+                # restore early in case metadata can speedup parsing
+                self._restore_meta(restored_meta)
             except:
                 warnings.warn(
                     f"Failed to restore from path {save_preprocessed}. Deleting it and recreating it. This might take some time."
                 )
                 shutil.rmtree(save_preprocessed)
                 restored = False
+
+        self._verbose = verbose
         subjects_parsed = self.parse_subjects(root_path)
         if restored:
             if len(subjects_parsed) != len(subjects_restored):
@@ -73,34 +73,41 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
         self._get_classes_key = get_classes_key
         self._get_stats_key = get_stats_key
+ 
+        def set_if_not_already_present(k: str, v: Any):
+            if not hasattr(self, k):
+                setattr(self, k, v)
 
-        self._spacings = None
-        self._sizes = None
-        self._classes = None
-        self._intensity_values = None
+        set_if_not_already_present("_spacings", None)
+        set_if_not_already_present("_sizes", None)
+        set_if_not_already_present("_classes", None)
+        set_if_not_already_present("_intensity_values", None)
 
         if median_spacing is not None and not isinstance(median_spacing, torch.Tensor):
             median_spacing = torch.tensor(median_spacing)
 
         if median_size is not None and not isinstance(median_size, torch.Tensor):
             median_size = torch.tensor(median_size)
-            
+
         self._median_spacing = median_spacing
         self._median_size = median_size
-        self._median_size_after_resampling = None
+        self._median_size_after_resampling = median_size
         self._max_size_after_resampling = None
         self._min_size_after_resampling = None
         self._intensity_mean = None
         self._intensity_std = None
         self._class_mapping = None
         self._num_saving_procs = num_saving_procs
-        self._verbose = verbose
         self._crop_to_nonzero_stats = crop_to_nonzero_stats
 
         self.image_modality = image_modality
         self.anisotropy_threshold = anisotropy_threshold
 
-        if restored:
+        if restored_meta:
+            if not restored:
+                warnings.warn(
+                    f"The data samples could not be restored. Still using the restored metadata. If this is not desired please delete {save_preprocessed}"
+                )
             self._restore_meta(restored_meta)
         self._restored = restored
 
@@ -197,7 +204,9 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             add_intensity_values = False
 
         # no values to add, return early
-        if self._restored or not any((add_spacings, add_sizes, add_classes, add_intensity_values)):
+        if self._restored or not any(
+            (add_spacings, add_sizes, add_classes, add_intensity_values)
+        ):
             return
 
         iterable = self
@@ -227,7 +236,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             ):
                 if isinstance(new_sub[get_classes_key], tio.data.Image):
                     self._classes.update(
-                        new_sub[get_classes_key].tensor.unqiue().tolist()
+                        new_sub[get_classes_key].tensor.unique().tolist()
                     )
                 elif isinstance(new_sub[get_classes_key], torch.Tensor):
                     self._classes.update(new_sub[get_classes_key].unique().tolist())
@@ -327,7 +336,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
                 self._sizes_after_resampling, 0
             ).values
 
-        return self._median_size_after_resampling
+        return self._median_size_after_resampling.long()
 
     @median_size_after_resampling.setter
     def median_size_after_resampling(self, value):
@@ -369,16 +378,22 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         return DefaultPreprocessing(
             num_classes=self.num_classes,
             target_spacing=self.target_spacing.tolist(),
-            target_size=self.median_size.tolist(),
+            target_size=self.median_size_after_resampling.long().tolist(),
             modality=self.image_modality,
             class_mapping=self.class_mapping,
             dataset_intensity_mean=self.mean_intensity_value,
             dataset_intensity_std=self.std_intensity_value,
+            affine_key=self._get_stats_key,
         )
 
     @property
     def default_augmentation(self):
-        return DefaultAugmentation(self.image_modality, include_deformation=False, spatial_prob=1, intensity_prob=1)
+        return DefaultAugmentation(
+            self.image_modality,
+            include_deformation=False,
+            spatial_prob=1,
+            intensity_prob=1,
+        )
 
     @property
     def mean_intensity_value(self) -> torch.Tensor:
@@ -477,7 +492,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
         for k, v in sub.items():
             if not isinstance(v, tio.data.Image):
-                
+
                 sub_dict[k] = v
 
         with open(os.path.join(path, str(idx), "subject.json"), "w") as f:
@@ -486,6 +501,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
     def _save_preprocessed(self, path: str):
         os.makedirs(path, exist_ok=True)
 
+        self._save_dataset_statistics(path)
         func = partial(self._save_preprocessed_single_subject, path=path)
 
         # iterable = list(range(len(self)))
@@ -509,28 +525,32 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
                 _ = list(iter)
 
+    def get_stats(self):
+        return {
+            "median_spacing": self.median_spacing.tolist(),
+            "median_size": self.median_size.tolist(),
+            "class_mapping": self.class_mapping,
+            "mean_intensity_value": self.mean_intensity_value.tolist(),
+            "std_intensity_value": self.std_intensity_value.tolist(),
+            "median_size_after_resampling": self.median_size_after_resampling.tolist(),
+            "max_size_after_resampling": self.max_size_after_resampling.tolist(),
+            "min_size_after_resampling": self.min_size_after_resampling.tolist(),
+            "all_spacings": self.all_spacings.tolist(),
+            "all_sizes": self.all_sizes.tolist(),
+            "all_classes": list(self._classes),
+            "all_intensity_values": {k: v for k, v in self._intensity_values.items()},
+        }
+
+    def _save_dataset_statistics(self, path):
+        os.makedirs(path, exist_ok=True)
         with open(os.path.join(path, "dataset.json"), "w") as f:
+            stats = self.get_stats()
             json.dump(
-                {
-                    "median_spacing": self.median_spacing.tolist(),
-                    "median_size": self.median_size.tolist(),
-                    "class_mapping": self.class_mapping,
-                    "mean_intensity_value": self.mean_intensity_value.tolist(),
-                    "std_intensity_value": self.std_intensity_value.tolist(),
-                    "median_size_after_resampling": self.median_size_after_resampling.tolist(),
-                    "max_size_after_resampling": self.max_size_after_resampling.tolist(),
-                    "min_size_after_resampling": self.min_size_after_resampling.tolist(),
-                    "all_spacings": self.all_spacings.tolist(),
-                    "all_sizes": self.all_sizes.tolist(),
-                    "all_classes": list(self._classes),
-                    "all_intensity_values": {
-                        k: v for k, v in self._intensity_values.items()
-                    },
-                },
+                stats,
                 f,
                 indent=4,
                 sort_keys=True,
-                cls=PyTorchJsonEncoder
+                cls=PyTorchJsonEncoder,
             )
 
     @staticmethod

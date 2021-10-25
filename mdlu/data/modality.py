@@ -1,6 +1,8 @@
-from pytorch_lightning.utilities.enums import LightningEnum
 from typing import Union
 
+from pytorch_lightning.utilities.enums import LightningEnum
+
+__all__ = ['ImageModality']
 
 class ImageModality(LightningEnum):
     PHOTOGRAPH = 0
