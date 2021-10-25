@@ -1,10 +1,12 @@
-from typing import Callable, Dict, Optional, Sequence, Tuple, Union
-from SimpleITK.SimpleITK import Crop
-import torchio as tio
-from mdlu.data.modality import ImageModality
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
+
+import nibabel as nib
 import torch
-from torchio.transforms.preprocessing.spatial.copy_affine import CopyAffine
+import torchio as tio
+from torch.nn import functional as F
 from torchio.transforms.preprocessing.spatial.resample import Resample
+
+from mdlu.data.modality import ImageModality
 
 
 class DefaultSpatialPreIntensityPreprocessingTransforms(tio.transforms.Compose):
@@ -17,7 +19,6 @@ class DefaultSpatialPreIntensityPreprocessingTransforms(tio.transforms.Compose):
     ):
         trafos = [
             CropToNonZero(),
-            tio.transforms.ToCanonical(),
         ]
 
         if class_mapping is not None:
@@ -35,7 +36,7 @@ class DefaultSpatialPreIntensityPreprocessingTransforms(tio.transforms.Compose):
 
 class DefaultSpatialPostIntensityPreprocessingTransforms(tio.transforms.Compose):
     def __init__(self, target_size: torch.Tensor):
-        trafos = [tio.transforms.CropOrPad(target_shape=target_size)]
+        trafos = [CropOrPadPerImage(target_shape=target_size)]
         super().__init__(trafos)
 
 
@@ -77,9 +78,11 @@ class DefaultPreprocessing(tio.transforms.Compose):
         dataset_intensity_std: Optional[torch.Tensor] = None,
         class_mapping: Optional[Dict[int, int]] = None,
         interpolation: str = "linear",
+        affine_key: str = "data",
     ):
         trafos = [
-            tio.transforms.preprocessing.CopyAffine("data"),
+            tio.transforms.ToCanonical(),
+            tio.transforms.preprocessing.CopyAffine(affine_key),
             DefaultSpatialPreIntensityPreprocessingTransforms(
                 num_classes=num_classes,
                 target_spacing=target_spacing,
@@ -123,7 +126,56 @@ class ResampleOnehot(Resample):
         return subject
 
 
+class ResampleAndCropOrPad(tio.transforms.Transform):
+    def __init__(
+        self,
+        target_spacing: Tuple[float, float, float],
+        target_size: Tuple[int, int, int],
+        num_classes: int,
+        interpolation: str = "linear",
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+
+        self._resample = ResampleOnehot(
+            num_classes,
+            target_spacing,
+            interpolation=interpolation,
+            p=self.probability,
+            copy=self.copy,
+            include=self.include,
+            exclude=self.exclude,
+            keys=None,
+            keep=self.keep,
+        )
+        self._crop_or_pad = tio.transforms.CropOrPad(
+            target_size,
+            p=self.probability,
+            copy=self.copy,
+            include=self.include,
+            exclude=self.exclude,
+            keys=None,
+            keep=self.keep,
+        )
+
+    def apply_transform(self, subject: tio.data.Subject) -> tio.data.Subject:
+
+        # handle each image in subject individually to compensate
+        # for misalignment of images in checks inbetween the steps!
+        for k, v in subject.get_images_dict(intensity_only=False).items():
+            curr_sub = tio.data.Subject(k=v)
+            curr_sub = self._resample(curr_sub)
+            curr_sub = self._crop_or_pad(curr_sub)
+
+            subject[k] = curr_sub[k]
+        return subject
+
+
 class CropToNonZero(tio.transforms.Transform):
+    def __init__(self, key: Optional[str] = None, **kwargs: Any):
+        super().__init__(**kwargs)
+        self.key = key
+
     @staticmethod
     def crop_to_nonzero(
         image: tio.data.Image, *additional_images: tio.data.Image, **padding_kwargs
@@ -141,7 +193,6 @@ class CropToNonZero(tio.transforms.Transform):
             Optional[torch.Tensor]: the cropped additional tensor,
                 only returned if passed
         """
-        import nibabel as nib
 
         centers, ranges = extract_nonzero_bounding_box_from_tensor(image.tensor[None])
 
@@ -164,11 +215,20 @@ class CropToNonZero(tio.transforms.Transform):
 
     def apply_transform(self, subject: tio.data.Subject) -> tio.data.Subject:
         intensity_images = subject.get_images_dict(intensity_only=True)
-        all_images = subject.get_images_dict(intensity_only=True)
+        all_images = subject.get_images_dict(intensity_only=False)
+
+        if self.key is None:
+            images = intensity_images
+        else:
+            images = {self.key: subject[self.key]}
+
+        assert (
+            len(images) == 1
+        ), "Multiple images found, this may lead to inconsistent cropping behavior. Pleas specify a reference image key"
+        # TODO: Add reference image key to default trafos and dataset
 
         seg_images = {k: v for k, v in all_images.items() if k not in intensity_images}
-
-        for v in intensity_images.values():
+        for v in images.values():
             self.crop_to_nonzero(v, *seg_images.values())
 
         return subject
@@ -190,7 +250,7 @@ class NNUnetNormalization(tio.transforms.ZNormalization):
         self.dataset_mean = dataset_mean
         self.dataset_std = dataset_std
         self.num_target_elems = torch.tensor(target_size).prod()
-        self.crop_or_pad_trafo = tio.transforms.CropOrPad(target_shape=target_size)
+        self.crop_or_pad_trafo = CropOrPadPerImage(target_shape=target_size)
 
     def apply_normalization(
         self, subject: tio.data.Subject, image_name: str, mask: torch.Tensor
@@ -287,8 +347,8 @@ class DefaultIntensityAugmentation(tio.transforms.Compose):
         trafos = []
 
         # if image_modality is not None and image_modality == ImageModality.MR:
-            # trafos.append(tio.transforms.RandomGhosting(p=p))
-            # trafos.append(tio.transforms.RandomSpike(p=p))
+        # trafos.append(tio.transforms.RandomGhosting(p=p))
+        # trafos.append(tio.transforms.RandomSpike(p=p))
 
         trafos += [
             tio.transforms.RandomMotion(p=p),
@@ -353,10 +413,6 @@ class CopySpacingTransform(tio.transforms.Transform):
         target_spacing = subject[self.origin].spacing
         for v in subject.get_images_dict(intensity_only=False).values():
             v.spacing = target_spacing
-
-
-import torch
-from torch.nn import functional as F
 
 
 def extract_nonzero_bounding_box_from_tensor(
@@ -505,3 +561,14 @@ def crop_tensor_to_nonzero(
         additional_tensor=additional_tensor,
         **padding_kwargs,
     )
+
+
+class CropOrPadPerImage(tio.transforms.CropOrPad):
+    def apply_transform(self, subject: tio.data.Subject) -> tio.data.Subject:
+
+        for k, v in subject.get_images_dict(
+            intensity_only=False, include=self.include, exclude=self.exclude
+        ).items():
+            part_sub = type(subject)({k: v})
+            subject[k] = super().apply_transform(part_sub)[k]
+        return subject
