@@ -11,7 +11,7 @@ RUN mkdir /workdir && \
 
 # opencv dependencies
 RUN apt update && \
-    DEBIAN_FRONTEND="noninteractive" apt install -y bash ffmpeg libsm6 libxext6 && \
+    DEBIAN_FRONTEND="noninteractive" apt install -y bash ffmpeg libsm6 libxext6
 
 COPY . /workdir/medical-dl-utils
 RUN pip install /workdir/medical-dl-utils
