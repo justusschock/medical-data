@@ -572,3 +572,5 @@ class CropOrPadPerImage(tio.transforms.CropOrPad):
             part_sub = type(subject)({k: v})
             subject[k] = super().apply_transform(part_sub)[k]
         return subject
+    
+# TODO: Add Transform to cut only one side of the image and flip it.
