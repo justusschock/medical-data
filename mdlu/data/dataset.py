@@ -1,268 +1,426 @@
+from __future__ import annotations
+
+import importlib
 import json
 import os
-import shutil
-import warnings
 from abc import ABCMeta, abstractmethod
-from collections import Counter
-from copy import deepcopy
+from collections import Counter, namedtuple
 from functools import partial
-from typing import Any, Mapping, Optional, Sequence, Tuple, Union
+from itertools import chain
+from operator import attrgetter, itemgetter
+from pathlib import Path
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
 
-import psutil
 import torch
 import torchio as tio
+import tqdm
 from mdlu.data.modality import ImageModality
-from mdlu.transforms import (CropToNonZero, DefaultAugmentation,
-                             DefaultPreprocessing)
 from mdlu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder
-from tqdm import tqdm
+from tqdm.contrib.concurrent import process_map
+
+ImageStats = namedtuple(
+    "ImageStats", ("spacing", "spatial_shape", "unique_intensities", "intensity_counts")
+)
 
 __all__ = ["AbstractDataset"]
 
 
+# TODO: Add possibility to also add intensity mean and std manually
 class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
+    extension_mapping = {
+        tio.constants.INTENSITY: ".nii.gz",
+        tio.constants.LABEL: ".nii.gz",
+    }
+    restore_mapping = {
+        tio.constants.INTENSITY: tio.data.ScalarImage,
+        tio.constants.LABEL: tio.data.LabelMap,
+    }
+    image_stat_attr_keys = ("spacings", "spatial_shapes", "intensity_counts")
+    label_stat_attr_keys = ()
+
+    pre_stats_trafo = tio.transforms.ToCanonical()
+
+    spacings: torch.Tensor
+    spatial_shapes: torch.Tensor
+    intensity_counts: Counter
+
     def __init__(
         self,
-        root_path,
-        image_modality: Union[int, ImageModality],
-        save_preprocessed: Optional[str] = None,
-        preprocessing: Optional[Union[tio.transforms.Transform, str]] = "default",
-        augmentation: Optional[Union[tio.transforms.Transform, str]] = "default",
-        load_getitem: bool = True,
-        get_classes_key: Optional[str] = "label",
-        get_stats_key: Optional[str] = "data",
-        median_spacing: Optional[Sequence[float]] = None,
-        median_size: Optional[Sequence[int]] = None,
+        *paths: Path | str,
+        preprocessed_path: Path | str | None,
+        image_modality: ImageModality | int,
+        image_stat_key: str | None = None,
+        label_stat_key: str | None = None,
+        preprocessing: Union[
+            tio.transform.Transform,
+            Callable[[tio.data.Subject], tio.data.Subject],
+            None,
+        ] = "default",
+        augmentation: tio.transform.Transform
+        | Callable[[tio.data.Subject], tio.data.Subject]
+        | None = None,
+        statistic_collection_nonzero: bool = False,
+        num_stat_collection_procs: int = 0,
+        num_save_procs: int = 0,
         anisotropy_threshold: int = 3,
-        num_saving_procs: Optional[int] = 1,
-        verbose: bool = False,
-        crop_to_nonzero_stats: bool = True,
+        target_spacing: Optional[Sequence[float] | torch.Tensor] = None,
+        target_size: Optional[Sequence[int] | torch.Tensor] = None,
     ):
-        restored = False
-        restored_meta = {}
-        if save_preprocessed is not None and os.path.isdir(save_preprocessed):
-            try:
-                subjects_restored, restored_meta = self._restore_from_preprocessed(
-                    save_preprocessed
-                )
-                restored = True
-                # restore early in case metadata can speedup parsing
-                self._restore_meta(restored_meta)
-            except:
-                warnings.warn(
-                    f"Failed to restore from path {save_preprocessed}. Deleting it and recreating it. This might take some time."
-                )
-                shutil.rmtree(save_preprocessed)
-                restored = False
-
-        self._verbose = verbose
-        subjects_parsed = self.parse_subjects(root_path)
-        if restored:
-            if len(subjects_parsed) != len(subjects_restored):
-                warnings.warn(
-                    f"Number of restored samples ({len(subjects_restored)}) is different from the parsed samples ({len(subjects_parsed)}). Ignoring them and using the parsed ones."
-                )
-                restored = False
-
-        if restored:
-            subjects = subjects_restored
-        else:
-            subjects = subjects_parsed
-
-        super().__init__(subjects, None, load_getitem=load_getitem)
-
-        self._get_classes_key = get_classes_key
-        self._get_stats_key = get_stats_key
- 
-        def set_if_not_already_present(k: str, v: Any):
-            if not hasattr(self, k):
-                setattr(self, k, v)
-
-        set_if_not_already_present("_spacings", None)
-        set_if_not_already_present("_sizes", None)
-        set_if_not_already_present("_classes", None)
-        set_if_not_already_present("_intensity_values", None)
-
-        if median_spacing is not None and not isinstance(median_spacing, torch.Tensor):
-            median_spacing = torch.tensor(median_spacing)
-
-        if median_size is not None and not isinstance(median_size, torch.Tensor):
-            median_size = torch.tensor(median_size)
-
-        self._median_spacing = median_spacing
-        self._median_size = median_size
-        self._median_size_after_resampling = median_size
-        self._max_size_after_resampling = None
-        self._min_size_after_resampling = None
-        self._intensity_mean = None
-        self._intensity_std = None
-        self._class_mapping = None
-        self._num_saving_procs = num_saving_procs
-        self._crop_to_nonzero_stats = crop_to_nonzero_stats
+        # need to do this early on as torch hacks some custom things (like __getattr__)
+        torch.utils.data.Dataset.__init__(self)
+        parsed_subjects = self.parse_subjects(*paths)
 
         self.image_modality = image_modality
+        self.image_stats_key = image_stat_key
+        self.label_stats_key = label_stat_key
+
         self.anisotropy_threshold = anisotropy_threshold
 
-        if restored_meta:
-            if not restored:
-                warnings.warn(
-                    f"The data samples could not be restored. Still using the restored metadata. If this is not desired please delete {save_preprocessed}"
+        if not isinstance(target_spacing, torch.Tensor) and target_spacing is not None:
+            target_spacing = torch.tensor(target_spacing)
+        self._target_spacing = target_spacing
+
+        if not isinstance(target_size, torch.Tensor) and target_size is not None:
+            target_size = torch.tensor(target_size, dtype=torch.long)
+        self._target_size = target_size
+
+        if preprocessed_path is not None and os.path.exists(preprocessed_path):
+            try:
+                preprocessed_parsed_subjects, dataset_stats = self.restore_preprocessed(
+                    preprocessed_path
                 )
-            self._restore_meta(restored_meta)
-        self._restored = restored
+            except Exception as e:
+                # raise Warning for exception
+                preprocessed_parsed_subjects, dataset_stats = [], None
 
-        if (
-            preprocessing is not None
-            and isinstance(preprocessing, str)
-            and preprocessing == "default"
-        ):
-            preprocessing = self.default_preprocessing
+            # Incorrect Saving/Loading -> Trigger warning
+            if len(preprocessed_parsed_subjects) != len(parsed_subjects):
+                preprocessed_parsed_subjects, dataset_stats = None, None
+        else:
+            preprocessed_parsed_subjects, dataset_stats = None, None
 
-        elif preprocessing is not None and not callable(preprocessing):
-            raise ValueError(
-                "preprocessing must be a callable, None or a string 'default'"
+        if dataset_stats is None:
+            dataset_stats = self.collect_dataset_stats(
+                *parsed_subjects,
+                image_stat_key=image_stat_key,
+                label_stat_key=label_stat_key,
+                crop_to_nonzero=statistic_collection_nonzero,
+                num_procs=num_stat_collection_procs,
             )
 
-        if (
-            augmentation is not None
-            and isinstance(augmentation, str)
-            and augmentation == "default"
-        ):
-            augmentation = self.default_augmentation
-        elif augmentation is not None and not callable(augmentation):
-            raise ValueError(
-                "augmentation must be a callable, None or a string 'default'"
-            )
+        self.set_image_stat_attributes(dataset_stats["image"])
+        self.set_label_stat_attributes(dataset_stats["label"])
 
         transforms = []
-        if preprocessing is not None and not restored:
-            transforms.append(preprocessing)
 
-        # only save when not restored, otherwise it was already saved
-        if save_preprocessed and not restored:
-            # set only preprocessing transforms
-            self.set_transform(
-                tio.transforms.Compose(transforms) if transforms else None
+        preprocessing_trafo = self.get_preprocessing_transforms(preprocessing)
+        if preprocessed_parsed_subjects is None and preprocessed_path is not None:
+            self.save_preprocessed(
+                *parsed_subjects,
+                save_path=preprocessed_path,
+                preprocessing_trafo=preprocessing_trafo,
+                num_procs=num_save_procs,
             )
-            # save all the preprocessed files
-            self._save_preprocessed(save_preprocessed)
-            subjects, restored_meta = self._restore_from_preprocessed(save_preprocessed)
+            preprocessed_parsed_subjects, _ = self.restore_preprocessed(
+                preprocessed_path
+            )
 
-            # this is part of torchio's SubjectsDataset init, which has to be redone here.
-            self._parse_subjects_list(subjects)
-            self._subjects = subjects
+        elif preprocessed_path is not None and preprocessing_trafo is not None:
+            transforms.append(preprocessing_trafo)
 
-            # restores the meta information
-            self._restore_meta(restored_meta)
-            # reset transforms to empty list, since preprocessing was already applied
-            transforms = []
+        augmentations = self.get_augmentation_transforms(augmentation)
 
-        if augmentation is not None:
-            transforms.append(augmentation)
+        if augmentations is not None:
+            transforms.append(augmentations)
 
-        if transforms:
-            self.set_transform(tio.transforms.Compose(transforms))
+        super().__init__(
+            preprocessed_parsed_subjects or parsed_subjects,
+            transform=tio.transforms.Compose(transforms),
+            load_getitem=True,
+        )
 
     @abstractmethod
-    def parse_subjects(self, root_path):
-        raise NotImplementedError
+    def parse_subjects(self, *paths: Path | str) -> Sequence[tio.data.Subject]:
+        pass
 
-    def _parse_stats(self, get_stats_key, get_classes_key: Optional[str]):
-        # disable load_getitem for this method, since otherwise
-        # the dataset may be loaded completely to memory and cached there
-        prev_load_getitem = self.load_getitem
-        prev_transforms = self._transform
+    def set_image_stat_attributes(self, image_stats: Dict[str, torch.Tensor | Counter]):
+        for name in self.image_stat_attr_keys:
+            setattr(self, name, image_stats[name])
 
-        curr_transform = None
-        if self._crop_to_nonzero_stats:
-            curr_transform = CropToNonZero()
-        self.set_transform(curr_transform)
+    def set_label_stat_attributes(self, label_stats: Dict[str, Any]):
+        for name in self.label_stat_attr_keys:
+            setattr(self, name, label_stats[name])
 
-        self.load_getitem = False
-        if self._spacings is None:
-            self._spacings = []
-            add_spacings = True
+    @staticmethod
+    def get_single_image_stats(image: tio.data.Image) -> ImageStats:
+        uniques, counts = image.tensor[image.tensor > image.tensor.min()].unique(
+            return_counts=True
+        )
+        uniques, counts = uniques.tolist(), counts.tolist()
+
+        return ImageStats(image.spacing, image.spatial_shape, uniques, counts)
+
+    @staticmethod
+    def get_single_label_stats(*args: Any, **kwargs: Any):
+        pass
+
+    @staticmethod
+    def aggregate_image_stats(*image_stats: ImageStats):
+        intensity_values = Counter()
+
+        spacings = tuple(map(attrgetter("spacing"), image_stats))
+        shapes = tuple(map(attrgetter("spatial_shape"), image_stats))
+        unique_intensities = map(attrgetter("unique_intensities"), image_stats)
+        intensity_counts = map(attrgetter("intensity_counts"), image_stats)
+
+        for u, c in zip(unique_intensities, intensity_counts):
+            intensity_values.update(dict(zip(u, c)))
+
+        return {
+            "spacings": torch.tensor(spacings, dtype=torch.float),
+            "spatial_shapes": torch.tensor(shapes, dtype=torch.long),
+            "intensity_counts": intensity_values,
+        }
+
+    @staticmethod
+    def aggregate_label_stats(*stats: Any):
+        return
+
+    def collect_stats_single_subject(
+        self,
+        subject: tio.data.Subject,
+        image_stat_key: str | None,
+        label_stat_key: str | None,
+        crop_to_nonzero: bool = False,
+    ):
+
+        subject = self.pre_stats_trafo(subject)
+
+        if crop_to_nonzero:
+            from mdlu.transforms import CropToNonZero
+
+            trafo = CropToNonZero()
+            subject = trafo(subject)
+
+        # TODO: Add Warnings if keys not present
+        if image_stat_key:
+            image = subject.get(image_stat_key, subject.get_first_image())
         else:
-            add_spacings = False
+            image = subject.get_first_image()
 
-        if self._sizes is None:
-            self._sizes = []
-            add_sizes = True
+        if label_stat_key:
+            label = subject.get(label_stat_key, None)
         else:
-            add_sizes = False
+            label = None
 
-        if self._classes is None:
-            self._classes = set()
-            add_classes = True
+        return self.get_single_image_stats(image), self.get_single_label_stats(label)
+
+    def collect_dataset_stats(
+        self,
+        *subjects: tio.data.Subject,
+        image_stat_key: str | None,
+        label_stat_key: str | None,
+        crop_to_nonzero: bool,
+        num_procs: int,
+    ):
+        func = partial(
+            self.collect_stats_single_subject,
+            image_stat_key=image_stat_key,
+            label_stat_key=label_stat_key,
+            crop_to_nonzero=crop_to_nonzero,
+        )
+
+        desc = "Retrieving Subject Statistics"
+        if num_procs == 0:
+            results = list(map(func, tqdm.tqdm(subjects, desc=desc)))
         else:
-            add_classes = False
+            results = process_map(func, subjects, max_workers=num_procs, desc=desc)
 
-        if self._intensity_values is None:
-            self._intensity_values = Counter()
-            add_intensity_values = True
-        else:
-            add_intensity_values = False
+        return {
+            "image": self.aggregate_image_stats(
+                *map(itemgetter(0), results),
+            ),
+            "label": self.aggregate_label_stats(*map(itemgetter(1), results)),
+        }
 
-        # no values to add, return early
-        if self._restored or not any(
-            (add_spacings, add_sizes, add_classes, add_intensity_values)
+    def get_preprocessing_transforms(
+        self, preprocessing
+    ) -> tio.transforms.Transform | None:
+        if preprocessing is None or (
+            isinstance(preprocessing, str) and preprocessing.lower() == "none"
         ):
-            return
+            return None
+        elif callable(preprocessing):
+            return preprocessing
 
-        iterable = self
+        elif isinstance(preprocessing, str) and preprocessing == "default":
+            return self.default_preprocessing
 
-        if self._verbose:
-            iterable = tqdm(iterable, desc="Computing Dataset Statistics")
+        else:
+            raise ValueError(f"Invalid Preprocessing: {preprocessing}")
 
-        for sub in iterable:
-            assert isinstance(sub, tio.Subject)
-            new_sub = deepcopy(sub)
-            if add_spacings:
-                if get_stats_key is not None and get_stats_key in new_sub:
-                    self._spacings.append(new_sub[get_stats_key].spacing)
+    def get_augmentation_transforms(
+        self, augmentation
+    ) -> tio.transforms.Transform | None:
+        if augmentation is None or (
+            isinstance(augmentation, str) and augmentation.lower() == "none"
+        ):
+            return None
+        elif callable(augmentation):
+            return augmentation
+
+        elif isinstance(augmentation, str) and augmentation == "default":
+            return self.default_augmentation
+
+        else:
+            raise ValueError(f"Invalid Augmentation: {augmentation}")
+
+    def save_single_preprocessed_subject(
+        self,
+        idx: int,
+        subject: tio.data.Subject,
+        save_path: str | Path,
+        preprocessing_trafo: tio.transform.Transform
+        | Callable[[tio.data.Subject], tio.data.Subject]
+        | None,
+        total_num_subjects: int,
+    ):
+        if preprocessing_trafo is not None:
+            subject = preprocessing_trafo(subject)
+
+        save_path = os.path.join(
+            save_path, str(idx).zfill(len(str(total_num_subjects)))
+        )
+        os.makedirs(save_path, exist_ok=True)
+
+        tio_images = {}
+        to_dump = {}
+        for k, v in subject.items():
+            if isinstance(v, tio.data.Image):
+                tio_images[k] = v.type
+                v.save(os.path.join(save_path, k + self.extension_mapping[v.type]))
+            else:
+                to_dump[k] = v
+
+        to_dump["TORCHIO_SUBJECT_CLASS"] = ".".join(
+            (type(subject).__module__, type(subject).__qualname__)
+        )
+        to_dump["TORCHIO_IMAGE_TYPES"] = tio_images
+
+        with open(os.path.join(save_path, "subject.json"), "w") as f:
+            json.dump(to_dump, f, indent=4, sort_keys=True, cls=PyTorchJsonEncoder)
+
+    def _wrapped_save_single_preprocessed_subject(
+        self,
+        args: Tuple[int, tio.data.Subject],
+        save_path: str | Path,
+        preprocessing_trafo: tio.transform.Transform
+        | Callable[[tio.data.Subject], tio.data.Subject]
+        | None,
+        total_num_subjects: int,
+    ):
+        return self.save_single_preprocessed_subject(
+            *args,
+            save_path=save_path,
+            preprocessing_trafo=preprocessing_trafo,
+            total_num_subjects=total_num_subjects,
+        )
+
+    def image_state_dict(self) -> Dict[str, Any]:
+        return {k: getattr(self, k) for k in self.image_stat_attr_keys}
+
+    def label_state_dict(self) -> Dict[str, Any]:
+        return {k: getattr(self, k) for k in self.label_stat_attr_keys}
+
+    def state_dict(self) -> Dict[str, Dict[str, Any]]:
+        return {"image": self.image_state_dict(), "label": self.label_state_dict()}
+
+    def save_preprocessed(
+        self, *subjects, save_path, preprocessing_trafo, num_procs
+    ) -> None:
+        func = partial(
+            self._wrapped_save_single_preprocessed_subject,
+            save_path=save_path,
+            preprocessing_trafo=preprocessing_trafo,
+            total_num_subjects=len(subjects),
+        )
+
+        desc = "Saving Preprocessed Subjects"
+        if num_procs == 0:
+            list(map(func, enumerate(tqdm.tqdm(subjects, desc=desc))))
+        else:
+            process_map(
+                func,
+                enumerate(subjects),
+                max_workers=num_procs,
+                desc=desc,
+                total=len(subjects),
+            )
+
+        stat_dict = self.state_dict()
+
+        with open(os.path.join(save_path, "dataset.json"), "w") as f:
+            json.dump(
+                stat_dict,
+                f,
+                indent=4,
+                sort_keys=True,
+                cls=PyTorchJsonEncoder,
+            )
+
+    def restore_preprocessed(
+        self, preprocessed_path
+    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor, Counter], Any]:
+        with open(os.path.join(preprocessed_path, "dataset.json"), "r") as f:
+            dset_meta = json.load(f, cls=PyTorchJsonDecoder)
+
+        subjects = []
+        subs = sorted(
+            [
+                os.path.join(preprocessed_path, x)
+                for x in os.listdir(preprocessed_path)
+                if os.path.isdir(os.path.join(preprocessed_path, x))
+            ],
+            key=lambda _x: int(os.path.split(_x)[1]),
+        )
+
+        for sub in subs:
+            # load information about subject
+            with open(os.path.join(sub, "subject.json"), "r") as f:
+                subject_meta = json.load(f, cls=PyTorchJsonDecoder)
+
+            subject_cls_path = subject_meta.pop("TORCHIO_SUBJECT_CLASS", "")
+
+            if subject_cls_path:
+
+                cls_module_path, cls_name = subject_cls_path.rsplit(".", 1)
+                cls_module = importlib.import_module(cls_module_path)
+
+                if cls_module is not None:
+                    subject_cls = getattr(cls_module, cls_name, None)
                 else:
-                    self._spacings.append(new_sub.spacing)
+                    subject_cls = None
+            else:
+                subject_cls = None
 
-            if add_sizes:
-                if get_stats_key is not None and get_stats_key in new_sub:
-                    self._sizes.append(new_sub[get_stats_key].spatial_shape)
-                else:
-                    self._sizes.append(new_sub.spatial_shape)
+            subject_cls = subject_cls or tio.data.Subject
 
-            if (
-                add_classes
-                and get_classes_key is not None
-                and get_classes_key in new_sub
-            ):
-                if isinstance(new_sub[get_classes_key], tio.data.Image):
-                    self._classes.update(
-                        new_sub[get_classes_key].tensor.unique().tolist()
-                    )
-                elif isinstance(new_sub[get_classes_key], torch.Tensor):
-                    self._classes.update(new_sub[get_classes_key].unique().tolist())
-                elif not isinstance(new_sub[get_classes_key], Sequence):
-                    self._classes.update(list(set([new_sub[get_classes_key]])))
-                else:
-                    self._classes.update(list(set(new_sub[get_classes_key])))
-
-            if (
-                add_intensity_values
-                and get_stats_key is not None
-                and get_stats_key in new_sub
-            ):
-                img = new_sub[get_stats_key].tensor
-                # only use foreground pixels
-                uniques, counts = img[img > 0].unique(return_counts=True)
-                uniques, counts = uniques.tolist(), counts.tolist()
-                self._intensity_values.update(
-                    {uniques[i]: counts[i] for i in range(len(uniques))}
+            images = subject_meta.pop("TORCHIO_IMAGE_TYPES", {})
+            for k, v in images.items():
+                subject_meta[k] = self.restore_mapping[v](
+                    os.path.join(sub, k + self.extension_mapping[v])
                 )
 
-        self.load_getitem = prev_load_getitem
-        self.set_transform(prev_transforms)
+            subjects.append(subject_cls(subject_meta))
+
+        return subjects, dset_meta
 
     @property
-    def target_spacing(self):
+    def median_spacing(self) -> torch.Tensor:
+        return torch.median(self.spacings, 0).values
+
+    @property
+    def computed_target_spacing(self) -> torch.Tensor:
         target_spacing = self.median_spacing
         target_size = self.median_size_after_resampling
         # we need to identify datasets for which a different target spacing could be beneficial. These datasets have
@@ -283,7 +441,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         ] * self.anisotropy_threshold < min(other_sizes)
 
         if has_aniso_spacing and has_aniso_voxels:
-            spacings_of_that_axis = self.all_spacings[:, worst_spacing_axis]
+            spacings_of_that_axis = self.spacings[:, worst_spacing_axis]
             target_spacing_of_that_axis = torch.quantile(spacings_of_that_axis, 0.1)
             # don't let the spacing of that axis get higher than the other axes
             if target_spacing_of_that_axis < max(other_spacings):
@@ -295,343 +453,125 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         return target_spacing
 
     @property
-    def median_spacing(self):
-        if self._median_spacing is None:
-            self._median_spacing = torch.median(self.all_spacings, 0).values
-
-        return self._median_spacing
-
-    @median_spacing.setter
-    def median_spacing(self, value):
-        self._median_spacing = value
+    def target_spacing(self) -> torch.Tensor:
+        return self._target_spacing or self.computed_target_spacing
 
     @property
-    def all_spacings(self):
-        if self._spacings is None:
-            self._parse_stats(self._get_stats_key, self._get_classes_key)
-
-        spacings = self._spacings
-
-        if not isinstance(spacings, torch.Tensor):
-            spacings = torch.tensor(spacings)
-        return spacings
-
-    @property
-    def all_sizes(self):
-        if self._sizes is None:
-            self._parse_stats(self._get_stats_key, self._get_classes_key)
-        return torch.tensor(self._sizes)
-
-    @property
-    def _sizes_after_resampling(self):
-        sizes_after_resampling = (
-            self.all_sizes / self.all_spacings * self.median_spacing
+    def sizes_after_resampling(self) -> torch.Tensor:
+        return (
+            (self.spatial_shapes.float() / self.spacings * self.median_spacing)
+            .round()
+            .long()
         )
-        return sizes_after_resampling
 
     @property
-    def median_size_after_resampling(self):
-        if self._median_size_after_resampling is None:
-            self._median_size_after_resampling = torch.median(
-                self._sizes_after_resampling, 0
-            ).values
-
-        return self._median_size_after_resampling.long()
-
-    @median_size_after_resampling.setter
-    def median_size_after_resampling(self, value):
-        self._median_size_after_resampling = value
+    def median_size_after_resampling(self) -> torch.Tensor:
+        return torch.median(self.sizes_after_resampling, 0).values
 
     @property
-    def median_size(self):
-        if self._median_size is None:
-
-            self._median_size = torch.median(self.all_sizes, 0).values
-
-        return self._median_size
-
-    @median_size.setter
-    def median_size(self, value):
-        self._median_size = value
+    def target_size(self) -> torch.Tensor:
+        return self._target_size or self.median_size_after_resampling
 
     @property
-    def class_mapping(self):
-        if self._class_mapping is None:
-            self._parse_stats(self._get_stats_key, self._get_classes_key)
-            self._class_mapping = {x: i for i, x in enumerate(sorted(self._classes))}
-        return self._class_mapping if self._class_mapping else None
-
-    @class_mapping.setter
-    def class_mapping(self, value):
-        self._class_mapping = value
+    def mean_intensity_value(self) -> torch.Tensor:
+        return torch.tensor(
+            sum([float(k) * float(v) for k, v in self.intensity_counts.items()])
+            / sum(self.intensity_counts.values())
+        )
 
     @property
-    def inverse_class_mapping(self):
-        return {v: k for k, v in self.class_mapping.items()}
+    def std_intensity_value(self) -> torch.Tensor:
+
+        n = sum(self.intensity_counts.values())
+        # normal intensity calculation without allocating all the occurences to save memory
+        return (
+            (
+                sum(
+                    [float(k) * float(v) ** 2 for k, v in self.intensity_counts.items()]
+                )
+                - n * self.mean_intensity_value**2
+            )
+            / (n - 1)
+        ).sqrt()
 
     @property
-    def num_classes(self):
-        return len(self.class_mapping) if self.class_mapping is not None else None
+    def max_size_after_resampling(self):
+        return torch.max(self._sizes_after_resampling, 0).values
+
+    @property
+    def min_size_after_resampling(self):
+        return torch.min(self.sizes_after_resampling, 0).values
 
     @property
     def default_preprocessing(self):
+        from mdlu.transforms import DefaultPreprocessing
+
         return DefaultPreprocessing(
-            num_classes=self.num_classes,
             target_spacing=self.target_spacing.tolist(),
-            target_size=self.median_size_after_resampling.long().tolist(),
+            target_size=self.target_size.tolist(),
             modality=self.image_modality,
-            class_mapping=self.class_mapping,
             dataset_intensity_mean=self.mean_intensity_value,
             dataset_intensity_std=self.std_intensity_value,
-            affine_key=self._get_stats_key,
+            affine_key=self.image_stats_key,
         )
 
     @property
     def default_augmentation(self):
+        from mdlu.transforms import DefaultAugmentation
+
         return DefaultAugmentation(
             self.image_modality,
             include_deformation=False,
-            spatial_prob=1,
-            intensity_prob=1,
         )
 
-    @property
-    def mean_intensity_value(self) -> torch.Tensor:
-        if self._intensity_mean is None:
-            self._parse_stats(self._get_stats_key, self._get_classes_key)
-            # normal mean calculation without allocating all the occurences to save memory
-            self._intensity_mean = torch.tensor(
-                sum([float(k) * float(v) for k, v in self._intensity_values.items()])
-                / sum(self._intensity_values.values())
-            )
-        return self._intensity_mean
 
-    @mean_intensity_value.setter
-    def mean_intensity_value(self, value):
-        self._intensity_mean = value
+class AbstractDiscreteLabelDataset(AbstractDataset):
+    class_values: torch.Tensor
+    label_stat_attr_keys = ("class_values", *AbstractDataset.label_stat_attr_keys)
 
-    @property
-    def std_intensity_value(self) -> torch.Tensor:
-        if self._intensity_std is None:
-            self._parse_stats(self._get_stats_key, self._get_classes_key)
-            n = sum(self._intensity_values.values())
-            # normal intensity calculation without allocating all the occurences to save memory
-            self._intensity_std = (
-                (
-                    sum(
-                        [
-                            float(k) * float(v) ** 2
-                            for k, v in self._intensity_values.items()
-                        ]
-                    )
-                    - n * self.mean_intensity_value ** 2
-                )
-                / (n - 1)
-            ).sqrt()
+    def get_single_label_stats(self, label: tio.data.Image):
+        return {"class_values": label.tensor.unique().values.tolist()}
 
-        return self._intensity_std
-
-    @std_intensity_value.setter
-    def std_intensity_value(self, value):
-        self._intensity_std = value
-
-    @property
-    def max_size_after_resampling(self):
-        if self._max_size_after_resampling is None:
-            self._max_size_after_resampling = torch.max(
-                self._sizes_after_resampling, 0
-            ).values
-
-        return self._max_size_after_resampling
-
-    @max_size_after_resampling.setter
-    def max_size_after_resampling(self, value):
-        self._max_size_after_resampling = value
-
-    @property
-    def min_size_after_resampling(self):
-        if self._min_size_after_resampling is None:
-            self._min_size_after_resampling = torch.min(
-                self._sizes_after_resampling, 0
-            ).values
-
-        return self._min_size_after_resampling
-
-    @min_size_after_resampling.setter
-    def min_size_after_resampling(self, value):
-        self._min_size_after_resampling = value
-
-    def _save_preprocessed_single_subject(
-        self, args: Tuple[int, tio.data.Subject], path: str
-    ):
-        # idx, sub = args
-        # idx = args
-        # sub = self[idx]
-        if isinstance(args, tuple):
-            sub = self._transform(args[1])
-            idx = args[0]
-
-        else:
-            sub = self[args]
-            idx = args
-
-        assert isinstance(sub, tio.data.Subject)
-        os.makedirs(os.path.join(path, str(idx)), exist_ok=True)
-        sub_dict = {}
-        for k, v in sub.get_images_dict(intensity_only=False).items():
-            assert isinstance(v, tio.data.Image)
-
-            v.save(os.path.join(path, str(idx), k + ".nii.gz"))
-
-            if isinstance(v, tio.data.ScalarImage):
-                sub_dict[k] = "ScalarImage"
-            elif isinstance(v, tio.data.LabelMap):
-                sub_dict[k] = "LabelMap"
-            elif isinstance(v, tio.data.Image):
-                sub_dict[k] = "Image"
-
-        for k, v in sub.items():
-            if not isinstance(v, tio.data.Image):
-
-                sub_dict[k] = v
-
-        with open(os.path.join(path, str(idx), "subject.json"), "w") as f:
-            json.dump(sub_dict, f, indent=4, sort_keys=True, cls=PyTorchJsonEncoder)
-
-    def _save_preprocessed(self, path: str):
-        os.makedirs(path, exist_ok=True)
-
-        self._save_dataset_statistics(path)
-        func = partial(self._save_preprocessed_single_subject, path=path)
-
-        # iterable = list(range(len(self)))
-        iterable = list(enumerate(self._subjects))
-
-        # if saving_procs is 1, there is no need for a separate process; this would only increase the overhead
-        if 0 <= self.num_saving_procs <= 1:
-            if self._verbose:
-                iterable = tqdm(iterable, desc="Saving Preprocessed Dataset")
-            for i in iterable:
-                func(i)
-
-        else:
-
-            with torch.multiprocessing.Pool(self.num_saving_procs) as p:
-                iter = p.imap(func, iterable)
-                if self._verbose:
-                    iter = tqdm(
-                        iter, total=len(self), desc="Saving Preprocessed Dataset"
-                    )
-
-                _ = list(iter)
-
-    def get_stats(self):
+    def aggregate_label_stats(self, *label_stats):
         return {
-            "median_spacing": self.median_spacing.tolist(),
-            "median_size": self.median_size.tolist(),
-            "class_mapping": self.class_mapping,
-            "mean_intensity_value": self.mean_intensity_value.tolist(),
-            "std_intensity_value": self.std_intensity_value.tolist(),
-            "median_size_after_resampling": self.median_size_after_resampling.tolist(),
-            "max_size_after_resampling": self.max_size_after_resampling.tolist(),
-            "min_size_after_resampling": self.min_size_after_resampling.tolist(),
-            "all_spacings": self.all_spacings.tolist(),
-            "all_sizes": self.all_sizes.tolist(),
-            "all_classes": list(self._classes),
-            "all_intensity_values": {k: v for k, v in self._intensity_values.items()},
+            "class_values": torch.tensor(
+                sorted(
+                    set(
+                        chain.from_iterable(
+                            map(itemgetter("class_values"), label_stats)
+                        )
+                    )
+                )
+            )
         }
 
-    def _save_dataset_statistics(self, path):
-        os.makedirs(path, exist_ok=True)
-        with open(os.path.join(path, "dataset.json"), "w") as f:
-            stats = self.get_stats()
-            json.dump(
-                stats,
-                f,
-                indent=4,
-                sort_keys=True,
-                cls=PyTorchJsonEncoder,
-            )
-
-    @staticmethod
-    def _restore_from_preprocessed(path):
-        with open(os.path.join(path, "dataset.json"), "r") as f:
-            dset_meta = json.load(f, cls=PyTorchJsonDecoder)
-
-        subjects = []
-        subs = [
-            os.path.join(path, x)
-            for x in os.listdir(path)
-            if os.path.isdir(os.path.join(path, x))
-        ]
-        for sub in subs:
-            # load information about subject
-            with open(os.path.join(sub, "subject.json"), "r") as f:
-                subject_meta = json.load(f, cls=PyTorchJsonDecoder)
-
-            # load images and other vals
-            subject = {}
-            for k, v in subject_meta.items():
-                if v == "ScalarImage":
-                    value = tio.data.ScalarImage(os.path.join(sub, k + ".nii.gz"))
-                elif v == "LabelMap":
-                    value = tio.data.LabelMap(os.path.join(sub, k + ".nii.gz"))
-                elif v == "Image":
-                    value = tio.data.Image(os.path.join(sub, k + ".nii.gz"))
-                else:
-                    value = v
-
-                if isinstance(value, tio.data.Image):
-                    subject[k] = value
-                else:
-                    subject[k] = value
-            subjects.append(tio.data.Subject(subject))
-
-        return subjects, dset_meta
-
-    def _restore_meta(self, loaded_meta: Mapping[str, Any]):
-        self.median_spacing = torch.tensor(loaded_meta["median_spacing"])
-        self.median_size = torch.tensor(loaded_meta["median_size"])
-        self.class_mapping = loaded_meta["class_mapping"]
-        self.mean_intensity_value = torch.tensor(loaded_meta["mean_intensity_value"])
-        self.std_intensity_value = torch.tensor(loaded_meta["std_intensity_value"])
-        self.median_size_after_resampling = torch.tensor(
-            loaded_meta["median_size_after_resampling"]
-        )
-        self.max_size_after_resampling = torch.tensor(
-            loaded_meta["max_size_after_resampling"]
-        )
-        self.min_size_after_resampling = torch.tensor(
-            loaded_meta["min_size_after_resampling"]
-        )
-        self._spacings = torch.tensor(loaded_meta["all_spacings"])
-        self._sizes = torch.tensor(loaded_meta["all_sizes"])
-        self._classes = set(loaded_meta["all_classes"])
-        self._intensity_values = Counter().update(loaded_meta["all_intensity_values"])
+    @property
+    def consecutive_class_mapping(self) -> Dict[int, int]:
+        return dict(enumerate(self.class_values.tolist()))
 
     @property
-    def num_saving_procs(self) -> int:
-        if self._num_saving_procs is None:
-            # this is only a very rough approximation. It assumes the main memory occupation comes from images
-            # and that they will all be resampled to the same size.
-            # it omits the overhead of the current dataset (without the images) which may be pickled (partially) as well.
-            # it also assumes the additional memory during processing to be a maximum of 1.5 times the image memory
-            num_voxels = torch.prod(self.median_size_after_resampling)
-            num_mem_per_image = num_voxels * 32  # images are likely to be 32-bit
-            dummy_sub = self._subjects[0]
-            assert isinstance(dummy_sub, tio.data.Subject)
-            num_images = len(dummy_sub.get_images_names())
+    def inverse_class_mapping(self) -> Dict[int, int]:
+        return {v: k for k, v in self.consecutive_class_mapping.items()}
 
-            total_mem_per_sub = num_mem_per_image * num_images
+    @property
+    def num_classes(self) -> int:
+        return self.class_values.numel()
 
-            available_mem = (
-                psutil.virtual_memory().available + psutil.swap_memory().free
-            )
-            # use factor of 1.5 to factor in some memory reserves for processing. Otherwise it was crashing...
-            saving_procs = min(
-                max(1, int(available_mem / (total_mem_per_sub * 1.5))), len(self)
-            )
+    @property
+    def default_preprocessing(self):
+        from mdlu.transforms import DefaultPreprocessing
 
-            return saving_procs
-
-        return self._num_saving_procs
+        return tio.transforms.Compose(
+            [
+                tio.transforms.RemapLabels(self.class_mapping),
+                DefaultPreprocessing(
+                    target_spacing=self.target_spacing.tolist(),
+                    target_size=self.median_size_after_resampling.long().tolist(),
+                    modality=self.image_modality,
+                    dataset_intensity_mean=self.mean_intensity_value,
+                    dataset_intensity_std=self.std_intensity_value,
+                    affine_key=self.image_stats_key,
+                    num_classes=self.num_classes,
+                ),
+            ]
+        )

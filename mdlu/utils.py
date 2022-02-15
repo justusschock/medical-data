@@ -1,5 +1,6 @@
 import json
 from typing import Any, Mapping
+
 import torch
 from pytorch_lightning.utilities.apply_func import apply_to_collection
 
@@ -20,7 +21,9 @@ class PyTorchJsonDecoder(json.JSONDecoder):
             and "content" in d
         ):
             return torch.tensor(d["content"])
-        return {k: apply_to_collection(v, Mapping, self.to_tensor) for k, v in d.items()}
+        return {
+            k: apply_to_collection(v, Mapping, self.to_tensor) for k, v in d.items()
+        }
 
     def decode(self, s: str, *args, **kwargs) -> Any:
         decoded = super().decode(s, *args, **kwargs)

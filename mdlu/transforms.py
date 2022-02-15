@@ -1,35 +1,41 @@
-from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Optional, Sequence, Tuple, Union
 
 import nibabel as nib
 import torch
 import torchio as tio
+from mdlu.data.modality import ImageModality
 from torch.nn import functional as F
 from torchio.transforms.preprocessing.spatial.resample import Resample
-
-from mdlu.data.modality import ImageModality
 
 
 class DefaultSpatialPreIntensityPreprocessingTransforms(tio.transforms.Compose):
     def __init__(
         self,
-        num_classes,
+        resample_onehot: bool,
         target_spacing,
-        class_mapping: Optional[Dict[int, int]] = None,
         interpolation: str = "linear",
+        crop_to_nonzero: Union[str, bool, None] = False,
+        num_classes: Optional[int] = None,
     ):
-        trafos = [
-            CropToNonZero(),
-        ]
 
-        if class_mapping is not None:
-            trafos.append(tio.transforms.RemapLabels(class_mapping))
-        trafos = trafos + [
-            ResampleOnehot(
-                num_classes=num_classes,
-                target=target_spacing,
-                image_interpolation=interpolation,
-            ),
-        ]
+        trafos = []
+
+        if crop_to_nonzero or crop_to_nonzero is None:
+            trafos.append(CropToNonZero(crop_to_nonzero))
+
+        if resample_onehot:
+            assert num_classes is not None
+            trafos.append(
+                ResampleOnehot(
+                    num_classes=num_classes,
+                    target=target_spacing,
+                    image_interpolation=interpolation,
+                )
+            )
+        else:
+            trafos.append(
+                Resample(target=target_spacing, image_interpolation=interpolation)
+            )
 
         super().__init__(trafos)
 
@@ -70,15 +76,14 @@ class DefaultIntensityPreprocessing(tio.transforms.Compose):
 class DefaultPreprocessing(tio.transforms.Compose):
     def __init__(
         self,
-        num_classes: int,
         target_spacing: Sequence[float],
         target_size: Sequence[int],
         modality: Optional[Union[int, ImageModality]] = None,
         dataset_intensity_mean: Optional[torch.Tensor] = None,
         dataset_intensity_std: Optional[torch.Tensor] = None,
-        class_mapping: Optional[Dict[int, int]] = None,
         interpolation: str = "linear",
         affine_key: str = "data",
+        num_classes: Optional[int] = None,
     ):
         trafos = [
             tio.transforms.ToCanonical(),
@@ -86,7 +91,6 @@ class DefaultPreprocessing(tio.transforms.Compose):
             DefaultSpatialPreIntensityPreprocessingTransforms(
                 num_classes=num_classes,
                 target_spacing=target_spacing,
-                class_mapping=class_mapping,
                 interpolation=interpolation,
             ),
             DefaultIntensityPreprocessing(
@@ -307,9 +311,6 @@ class LabelToCategorical(
 
 
 class RescaleIntensityPercentiles(tio.transforms.RescaleIntensity):
-    def __init__(self, percentiles):
-        super().__init__(percentiles=percentiles)
-
     def rescale(self, tensor: torch.Tensor, mask: torch.Tensor, image_name: str):
         if self.percentiles == (0, 100):
             return tensor
@@ -572,5 +573,6 @@ class CropOrPadPerImage(tio.transforms.CropOrPad):
             part_sub = type(subject)({k: v})
             subject[k] = super().apply_transform(part_sub)[k]
         return subject
-    
+
+
 # TODO: Add Transform to cut only one side of the image and flip it.

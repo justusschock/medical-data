@@ -2,7 +2,8 @@ from typing import Union
 
 from pytorch_lightning.utilities.enums import LightningEnum
 
-__all__ = ['ImageModality']
+__all__ = ["ImageModality"]
+
 
 class ImageModality(LightningEnum):
     PHOTOGRAPH = 0
@@ -11,5 +12,5 @@ class ImageModality(LightningEnum):
     CT = 3
 
     @staticmethod
-    def get_dimensionality(modality: Union[int, 'ImageModality']) -> int:
+    def get_dimensionality(modality: Union[int, "ImageModality"]) -> int:
         return 2 + int(int(modality) > 1)
