@@ -43,7 +43,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v3
         with:
-          images: justusschock/medical-dl-utils
+          images: ${{ github.repository }}
           tags: |
             type=pep440,pattern={{version}}-${{ matrix.accelerator }}
             type=raw,value=latest-${{ matrix.accelerator }}

@@ -36,7 +36,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v3
         with:
-          images: justusschock/medical-dl-utils
+          images: ${{ github.repository }}
           tags: |
             type=raw,value=dev-${{ matrix.python_version }}
 
