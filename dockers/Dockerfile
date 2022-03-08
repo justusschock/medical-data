@@ -1,13 +1,12 @@
 # supported are cuda and cpu
 ARG HARDWARE=cuda
 
-FROM nvcr.io/nvidia/pytorch:21.10-py3 as base_cuda-latest
+FROM nvcr.io/nvidia/pytorch:21.10-py3 as base_cuda
 ARG PYPI_OPTIONS=""
 
-FROM nvcr.io/nvidia/pytorch:21.10-py3 as base_latest
 ARG PYPI_OPTIONS=""
 
-FROM continuumio/miniconda3:4.10.3p1 as base_cpu-latest
+FROM continuumio/miniconda3:4.10.3p1 as base_cpu
 # look for cpu torch releases
 ARG PYPI_OPTIONS="-f https://download.pytorch.org/whl/cpu/torch_stable.html"
 
