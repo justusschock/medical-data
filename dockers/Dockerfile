@@ -21,10 +21,13 @@ RUN mkdir /workdir && \
     mkdir /.config && \
     chmod -R 777 /.config
 
+# necessary to resolve dependencies and compile simpleitk
 RUN apt update && \
-    DEBIAN_FRONTEND="noninteractive" apt install -y bash
+    DEBIAN_FRONTEND="noninteractive" apt install -y bash build-essential cmake
+RUN pip install --upgrade pip scikit-build
 
 COPY . /workdir/medical-dl-utils
-RUN pip install /workdir/medical-dl-utils ${PYPI_OPTIONS}
+
+RUN conda install -c conda-forge grpcio && pip install /workdir/medical-dl-utils ${PYPI_OPTIONS}
 
 WORKDIR /workdir
