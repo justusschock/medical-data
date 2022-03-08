@@ -9,14 +9,15 @@ from functools import partial
 from itertools import chain
 from operator import attrgetter, itemgetter
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import torch
 import torchio as tio
 import tqdm
+from tqdm.contrib.concurrent import process_map
+
 from mdlu.data.modality import ImageModality
 from mdlu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder
-from tqdm.contrib.concurrent import process_map
 
 ImageStats = namedtuple(
     "ImageStats", ("spacing", "spatial_shape", "unique_intensities", "intensity_counts")
@@ -35,8 +36,12 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         tio.constants.INTENSITY: tio.data.ScalarImage,
         tio.constants.LABEL: tio.data.LabelMap,
     }
-    image_stat_attr_keys = ("spacings", "spatial_shapes", "intensity_counts")
-    label_stat_attr_keys = ()
+    image_stat_attr_keys: tuple[str, ...] = (
+        "spacings",
+        "spatial_shapes",
+        "intensity_counts",
+    )
+    label_stat_attr_keys: tuple[str, ...] = ()
 
     pre_stats_trafo = tio.transforms.ToCanonical()
 
@@ -51,11 +56,11 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         image_modality: ImageModality | int,
         image_stat_key: str | None = None,
         label_stat_key: str | None = None,
-        preprocessing: Union[
-            tio.transform.Transform,
-            Callable[[tio.data.Subject], tio.data.Subject],
-            None,
-        ] = "default",
+        preprocessing: (
+            tio.transform.Transform
+            | Callable[[tio.data.Subject], tio.data.Subject]
+            | None
+        ) = "default",
         augmentation: tio.transform.Transform
         | Callable[[tio.data.Subject], tio.data.Subject]
         | None = None,
@@ -63,8 +68,8 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         num_stat_collection_procs: int = 0,
         num_save_procs: int = 0,
         anisotropy_threshold: int = 3,
-        target_spacing: Optional[Sequence[float] | torch.Tensor] = None,
-        target_size: Optional[Sequence[int] | torch.Tensor] = None,
+        target_spacing: Sequence[float] | torch.Tensor | None = None,
+        target_size: Sequence[int] | torch.Tensor | None = None,
     ):
         # need to do this early on as torch hacks some custom things (like __getattr__)
         torch.utils.data.Dataset.__init__(self)
@@ -84,6 +89,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             target_size = torch.tensor(target_size, dtype=torch.long)
         self._target_size = target_size
 
+        preprocessed_parsed_subjects: list[tio.data.Subject] | tuple | None = None
         if preprocessed_path is not None and os.path.exists(preprocessed_path):
             try:
                 preprocessed_parsed_subjects, dataset_stats = self.restore_preprocessed(
@@ -91,7 +97,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
                 )
             except Exception as e:
                 # raise Warning for exception
-                preprocessed_parsed_subjects, dataset_stats = [], None
+                preprocessed_parsed_subjects, dataset_stats = (), None
 
             # Incorrect Saving/Loading -> Trigger warning
             if len(preprocessed_parsed_subjects) != len(parsed_subjects):
@@ -143,11 +149,11 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
     def parse_subjects(self, *paths: Path | str) -> Sequence[tio.data.Subject]:
         pass
 
-    def set_image_stat_attributes(self, image_stats: Dict[str, torch.Tensor | Counter]):
+    def set_image_stat_attributes(self, image_stats: dict[str, torch.Tensor | Counter]):
         for name in self.image_stat_attr_keys:
             setattr(self, name, image_stats[name])
 
-    def set_label_stat_attributes(self, label_stats: Dict[str, Any]):
+    def set_label_stat_attributes(self, label_stats: dict[str, Any]):
         for name in self.label_stat_attr_keys:
             setattr(self, name, label_stats[name])
 
@@ -161,12 +167,12 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         return ImageStats(image.spacing, image.spatial_shape, uniques, counts)
 
     @staticmethod
-    def get_single_label_stats(*args: Any, **kwargs: Any):
+    def get_single_label_stats(label: Any, *args: Any, **kwargs: Any):
         pass
 
     @staticmethod
     def aggregate_image_stats(*image_stats: ImageStats):
-        intensity_values = Counter()
+        intensity_values: Counter[float] = Counter()
 
         spacings = tuple(map(attrgetter("spacing"), image_stats))
         shapes = tuple(map(attrgetter("spatial_shape"), image_stats))
@@ -312,7 +318,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
     def _wrapped_save_single_preprocessed_subject(
         self,
-        args: Tuple[int, tio.data.Subject],
+        args: tuple[int, tio.data.Subject],
         save_path: str | Path,
         preprocessing_trafo: tio.transform.Transform
         | Callable[[tio.data.Subject], tio.data.Subject]
@@ -326,13 +332,13 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             total_num_subjects=total_num_subjects,
         )
 
-    def image_state_dict(self) -> Dict[str, Any]:
+    def image_state_dict(self) -> dict[str, Any]:
         return {k: getattr(self, k) for k in self.image_stat_attr_keys}
 
-    def label_state_dict(self) -> Dict[str, Any]:
+    def label_state_dict(self) -> dict[str, Any]:
         return {k: getattr(self, k) for k in self.label_stat_attr_keys}
 
-    def state_dict(self) -> Dict[str, Dict[str, Any]]:
+    def state_dict(self) -> dict[str, dict[str, Any]]:
         return {"image": self.image_state_dict(), "label": self.label_state_dict()}
 
     def save_preprocessed(
@@ -370,23 +376,23 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
     def restore_preprocessed(
         self, preprocessed_path
-    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor, Counter], Any]:
-        with open(os.path.join(preprocessed_path, "dataset.json"), "r") as f:
+    ) -> tuple[list[tio.data.Subject], dict[str, Any]]:
+        with open(os.path.join(preprocessed_path, "dataset.json")) as f:
             dset_meta = json.load(f, cls=PyTorchJsonDecoder)
 
         subjects = []
         subs = sorted(
-            [
+            (
                 os.path.join(preprocessed_path, x)
                 for x in os.listdir(preprocessed_path)
                 if os.path.isdir(os.path.join(preprocessed_path, x))
-            ],
+            ),
             key=lambda _x: int(os.path.split(_x)[1]),
         )
 
         for sub in subs:
             # load information about subject
-            with open(os.path.join(sub, "subject.json"), "r") as f:
+            with open(os.path.join(sub, "subject.json")) as f:
                 subject_meta = json.load(f, cls=PyTorchJsonDecoder)
 
             subject_cls_path = subject_meta.pop("TORCHIO_SUBJECT_CLASS", "")
@@ -475,7 +481,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
     @property
     def mean_intensity_value(self) -> torch.Tensor:
         return torch.tensor(
-            sum([float(k) * float(v) for k, v in self.intensity_counts.items()])
+            sum(float(k) * float(v) for k, v in self.intensity_counts.items())
             / sum(self.intensity_counts.values())
         )
 
@@ -486,10 +492,8 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         # normal intensity calculation without allocating all the occurences to save memory
         return (
             (
-                sum(
-                    [float(k) * float(v) ** 2 for k, v in self.intensity_counts.items()]
-                )
-                - n * self.mean_intensity_value**2
+                sum(float(k) * float(v) ** 2 for k, v in self.intensity_counts.items())
+                - n * self.mean_intensity_value ** 2
             )
             / (n - 1)
         ).sqrt()
@@ -529,7 +533,8 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
     class_values: torch.Tensor
     label_stat_attr_keys = ("class_values", *AbstractDataset.label_stat_attr_keys)
 
-    def get_single_label_stats(self, label: tio.data.Image):
+    @staticmethod
+    def get_single_label_stats(label: tio.data.Image, *args, **kwargs):
         return {"class_values": label.tensor.unique().values.tolist()}
 
     def aggregate_label_stats(self, *label_stats):
@@ -546,11 +551,11 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
         }
 
     @property
-    def consecutive_class_mapping(self) -> Dict[int, int]:
+    def consecutive_class_mapping(self) -> dict[int, int]:
         return dict(enumerate(self.class_values.tolist()))
 
     @property
-    def inverse_class_mapping(self) -> Dict[int, int]:
+    def inverse_class_mapping(self) -> dict[int, int]:
         return {v: k for k, v in self.consecutive_class_mapping.items()}
 
     @property

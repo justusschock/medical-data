@@ -3,9 +3,10 @@ from typing import Any, Callable, Optional, Sequence, Tuple, Union
 import nibabel as nib
 import torch
 import torchio as tio
-from mdlu.data.modality import ImageModality
 from torch.nn import functional as F
 from torchio.transforms.preprocessing.spatial.resample import Resample
+
+from mdlu.data.modality import ImageModality
 
 
 class DefaultSpatialPreIntensityPreprocessingTransforms(tio.transforms.Compose):
@@ -21,6 +22,10 @@ class DefaultSpatialPreIntensityPreprocessingTransforms(tio.transforms.Compose):
         trafos = []
 
         if crop_to_nonzero or crop_to_nonzero is None:
+            if crop_to_nonzero is not None and not isinstance(crop_to_nonzero, str):
+                raise TypeError(
+                    "crop_to_nonzero must be a string or None or a value evaluating to False to avoid cropping at all"
+                )
             trafos.append(CropToNonZero(crop_to_nonzero))
 
         if resample_onehot:
@@ -89,6 +94,7 @@ class DefaultPreprocessing(tio.transforms.Compose):
             tio.transforms.ToCanonical(),
             tio.transforms.preprocessing.CopyAffine(affine_key),
             DefaultSpatialPreIntensityPreprocessingTransforms(
+                resample_onehot=True,
                 num_classes=num_classes,
                 target_spacing=target_spacing,
                 interpolation=interpolation,
@@ -183,7 +189,7 @@ class CropToNonZero(tio.transforms.Transform):
     @staticmethod
     def crop_to_nonzero(
         image: tio.data.Image, *additional_images: tio.data.Image, **padding_kwargs
-    ) -> Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+    ) -> None:
         """
         crops tensor to non-zero and additional tensor to the same part of the
         tensor if given
@@ -192,10 +198,6 @@ class CropToNonZero(tio.transforms.Transform):
             additional_tensor: an additional tensor to crop to the same region
                 as :attr`tensor`
             **padding_kwargs: keyword arguments to controll the necessary padding
-        Returns:
-            torch.Tensor: the cropped tensor
-            Optional[torch.Tensor]: the cropped additional tensor,
-                only returned if passed
         """
 
         centers, ranges = extract_nonzero_bounding_box_from_tensor(image.tensor[None])
@@ -335,7 +337,8 @@ class DefaultSpatialAugmentation(tio.transforms.Compose):
                     tuple(range(ImageModality.get_dimensionality(image_modality))), p=p
                 ),
             ]
-        trafos.append(tio.transforms.RandomAffine(p=p)),
+
+        trafos.append(tio.transforms.RandomAffine(p=p))
 
         if include_deformation:
             trafos.append(tio.transforms.RandomElasticDeformation(p=p))
@@ -365,7 +368,7 @@ class DefaultIntensityAugmentation(tio.transforms.Compose):
 class DefaultAugmentation(tio.transforms.Compose):
     def __init__(
         self,
-        image_modality: Optional[ImageModality],
+        image_modality: ImageModality,
         include_deformation: bool = False,
         spatial_prob: float = 0.25,
         intensity_prob: float = 0.5,

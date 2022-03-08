@@ -50,4 +50,3 @@ jobs:
           file: dockers/cpu.Dockerfile
           push: false
         timeout-minutes: 50
-

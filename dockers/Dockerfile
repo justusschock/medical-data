@@ -13,7 +13,7 @@ ARG PYPI_OPTIONS="-f https://download.pytorch.org/whl/cpu/torch_stable.html"
 
 FROM base_${BASE}
 
-# Make Directories for config, caches and workdir 
+# Make Directories for config, caches and workdir
 # and set permissions to also use them as non-root
 RUN mkdir /workdir && \
     chmod -R 777 /workdir && \
