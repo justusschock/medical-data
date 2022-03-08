@@ -61,7 +61,9 @@ jobs:
         with:
           file: dockers/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          platforms: linux/amd64,linux/arm64
+          # arm64 has issues compiling SimpleITK from source
+          # platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           build-args: |
             HARDWARE=${{ matrix.accelerator }}
           tags: ${{ steps.meta.outputs.tags }}
