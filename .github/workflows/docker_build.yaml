@@ -33,13 +33,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v1
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
 
@@ -50,7 +43,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v3
         with:
-          images: justusschock/medical-dl-utils,ghcr.io/justusschock/medical-dl-utils
+          images: justusschock/medical-dl-utils
           tags: |
             type=pep440,pattern={{version}}-${{ matrix.accelerator }}
             type=raw,value=latest-${{ matrix.accelerator }}
