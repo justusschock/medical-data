@@ -1,35 +1,3 @@
-[project]
-name = "medical_dl_utils"
-description = ""
-readme = "README.md"
-python = ">=3.7"
-authors = [
-    {name = "Justus Schock", email = "justus.schock@posteo.de"}
-]
-license = ""
-homepage = "https://github.com/justusschock/medical-dl-utils"
-repository = "https://github.com/justusschock/medical-dl-utils"
-documentation = ""
-
-keywords = ["medical", "deep learning", "pytorch", "image processing"]
-
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Topic :: Scientific/Engineering :: Image Recognition",
-]
-
-dependencies = [
-    "torch>=1.9",
-    "psutil",
-    "torchio>0.18.56",
-    "pytorch_lightning>=1.5",
-    "monai>=0.7"
-]
 
 [project.optional-dependencies]
 test = [

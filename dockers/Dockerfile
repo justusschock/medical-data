@@ -28,6 +28,6 @@ RUN pip install --upgrade pip scikit-build
 
 COPY . /workdir/medical-dl-utils
 
-RUN conda install -c conda-forge grpcio && pip install /workdir/medical-dl-utils ${PYPI_OPTIONS}
+RUN pip install /workdir/medical-dl-utils ${PYPI_OPTIONS}
 
 WORKDIR /workdir
