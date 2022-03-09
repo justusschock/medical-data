@@ -19,12 +19,17 @@ on:
 jobs:
   build-docker:
     runs-on: ubuntu-20.04
+    # need this to patch around git. See https://github.com/actions/checkout/issues/335#issuecomment-827903708
+    container: alpine:latest
     strategy:
       fail-fast: false
       matrix:
         accelerator: ['cpu', 'cuda']
 
     steps:
+      # need this to patch around git. See https://github.com/actions/checkout/issues/335#issuecomment-827903708
+      - name: Obtain Latest Git ONLY within container for checkout
+        run: apk add git --update-cach
       - name: Checkout
         uses: actions/checkout@v3
         with:
