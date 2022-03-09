@@ -1,1 +1,1 @@
-__version__ = "0.0.3"
+from mdlu._version import version as __version__
