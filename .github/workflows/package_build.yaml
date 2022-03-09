@@ -4,14 +4,15 @@ on:
 
 jobs:
   publish-test:
-    name: Test Package Build
+    name: Test Package Build and Install
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@master
+      - uses: actions/checkout@v3
       - name: Set up Python 3.7
         uses: actions/setup-python@v1
         with:
           python-version: 3.7
+          fetch-depth: 0
 
       - name: Install pypa/build
         run: >-
@@ -26,3 +27,6 @@ jobs:
           --sdist
           --wheel
           --outdir dist/
+          
+      - name: Install Package
+        run: pip install .
