@@ -29,10 +29,13 @@ jobs:
         run: |
           sudo apt-get install git
 
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Setup Node
+        uses: actions/setup-node@v2
         with:
-          fetch-depth: 0
+          node-version: '12' # 14 had issues for me here at the time of build
+
+      - name: Checkout repository
+        uses: actions/checkout@v2
 
       - name: Login to DockerHub
         uses: docker/login-action@v1
