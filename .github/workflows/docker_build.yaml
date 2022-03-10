@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-20.04
     # need this to patch around git. See https://github.com/actions/checkout/issues/335#issuecomment-827903708
     # container: alpine:latest
+    container:
+           image: ubuntu:latest
     strategy:
       fail-fast: false
       matrix:
