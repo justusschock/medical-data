@@ -1,7 +1,13 @@
 #!/bin/bash
 
-if [[ $IMAGE_NAME == *"dev"* ]]; then
-  docker build -t $IMAGE_NAME --build-arg VARIANT=$VARIANT
-else
-  docker build -t $IMAGE_NAME --build-arg HARDWARE=$HARDWARE
+if [[ $IMAGE_NAME == *"dev-3.7" ]]; then
+  docker build -t $IMAGE_NAME --build-arg VARIANT=3.7
+elif [[ $IMAGE_NAME == *"dev-3.8" ]]; then
+  docker built -t $IMAGE_NAME --build-arg VARIANT=3.8
+elif [[ $IMAGE_NAME == *"dev-3.9" ]]; then
+  docker built -t $IMAGE_NAME --build-arg VARIANT=3.9
+elif [[ $IMAGE_NAME == *"cuda" ]]; then
+  docker built -t $IMAGE_NAME --build-arg HARDWARE=cuda
+elif [[ $IMAGE_NAME == *"cucpuda" ]]; then
+  docker built -t $IMAGE_NAME --build-arg HARDWARE=cpu
 fi
