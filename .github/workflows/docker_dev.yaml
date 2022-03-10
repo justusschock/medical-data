@@ -19,21 +19,7 @@ jobs:
         python_version: [3.7, 3.8, 3.9]
 
     steps:
-      # need this to patch around git. See https://github.com/actions/checkout/issues/335#issuecomment-827903708
-      - name: Setup OS
-        run: |
-          sudo apt-get update
-          sudo apt-get upgrade git
-
-      - name: Setup Git
-        run: |
-          sudo apt-get install git
-
-      - name: Setup Node
-        uses: actions/setup-node@v2
-        with:
-          node-version: '12' # 14 had issues for me here at the time of build
-
+     
       - name: Checkout repository
         uses: actions/checkout@v2
         with:
