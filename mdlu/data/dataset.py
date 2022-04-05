@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import gc
+from copy import deepcopy
 from abc import ABCMeta, abstractmethod
 from collections import Counter, namedtuple
 from functools import partial
@@ -57,11 +59,11 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         image_stat_key: str | None = None,
         label_stat_key: str | None = None,
         preprocessing: (
-            tio.transform.Transform
+            tio.transforms.Transform
             | Callable[[tio.data.Subject], tio.data.Subject]
             | None
         ) = "default",
-        augmentation: tio.transform.Transform
+        augmentation: tio.transforms.Transform
         | Callable[[tio.data.Subject], tio.data.Subject]
         | None = None,
         statistic_collection_nonzero: bool = False,
@@ -200,7 +202,12 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         crop_to_nonzero: bool = False,
     ):
 
-        subject = self.pre_stats_trafo(subject)
+        # do all the copying here to avoid loading the acutal subject.
+        # loading a copy is fine as this will be garbage collected at the end of the function
+        # loading the original subject which is also referenced somewhere else would lead to a memory leak
+        subject_copy = deepcopy(subject)
+
+        subject = self.pre_stats_trafo(subject_copy)
 
         if crop_to_nonzero:
             from mdlu.transforms import CropToNonZero
@@ -210,16 +217,23 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
         # TODO: Add Warnings if keys not present
         if image_stat_key:
-            image = subject.get(image_stat_key, subject.get_first_image())
+            image = subject_copy.get(image_stat_key, subject_copy.get_first_image())
         else:
-            image = subject.get_first_image()
+            image = subject_copy.get_first_image()
 
         if label_stat_key:
-            label = subject.get(label_stat_key, None)
+            label = subject_copy.get(label_stat_key, None)
         else:
             label = None
 
-        return self.get_single_image_stats(image), self.get_single_label_stats(label)
+        stats = deepcopy((self.get_single_image_stats(image), self.get_single_label_stats(label)))
+        del subject_copy
+        del image
+        del label
+        gc.collect()
+
+        return stats
+
 
     def collect_dataset_stats(
         self,
@@ -291,8 +305,12 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         | None,
         total_num_subjects: int,
     ):
+        # do all the copying here to avoid loading the acutal subject.
+        # loading a copy is fine as this will be garbage collected at the end of the function
+        # loading the original subject which is also referenced somewhere else would lead to a memory leak
+        subject_copy = deepcopy(subject)
         if preprocessing_trafo is not None:
-            subject = preprocessing_trafo(subject)
+            subject_copy = preprocessing_trafo(subject_copy)
 
         save_path = os.path.join(
             save_path, str(idx).zfill(len(str(total_num_subjects)))
@@ -301,7 +319,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
         tio_images = {}
         to_dump = {}
-        for k, v in subject.items():
+        for k, v in subject_copy.items():
             if isinstance(v, tio.data.Image):
                 tio_images[k] = v.type
                 v.save(os.path.join(save_path, k + self.extension_mapping[v.type]))
@@ -535,7 +553,7 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
 
     @staticmethod
     def get_single_label_stats(label: tio.data.Image, *args, **kwargs):
-        return {"class_values": label.tensor.unique().values.tolist()}
+        return {"class_values": label.tensor.unique().tolist()}
 
     def aggregate_label_stats(self, *label_stats):
         return {
@@ -568,7 +586,7 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
 
         return tio.transforms.Compose(
             [
-                tio.transforms.RemapLabels(self.class_mapping),
+                tio.transforms.RemapLabels(self.consecutive_class_mapping),
                 DefaultPreprocessing(
                     target_spacing=self.target_spacing.tolist(),
                     target_size=self.median_size_after_resampling.long().tolist(),
