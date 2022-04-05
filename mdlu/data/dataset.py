@@ -25,7 +25,7 @@ ImageStats = namedtuple(
     "ImageStats", ("spacing", "spatial_shape", "unique_intensities", "intensity_counts")
 )
 
-__all__ = ["AbstractDataset"]
+__all__ = ["AbstractDataset", "AbstractDiscreteLabelDataset"]
 
 
 # TODO: Add possibility to also add intensity mean and std manually
