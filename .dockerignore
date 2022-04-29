@@ -16,7 +16,7 @@ coverage.xml
 *.log
 .mypy_cache
 .pytest_cache
-.hypothesis 
+.hypothesis
 .git
 .idea
 .vscode

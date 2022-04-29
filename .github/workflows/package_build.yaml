@@ -28,6 +28,6 @@ jobs:
           --sdist
           --wheel
           --outdir dist/
-          
+
       - name: Install Package
         run: pip install .

@@ -4,6 +4,11 @@ from typing import Any, Mapping
 import torch
 from pytorch_lightning.utilities.apply_func import apply_to_collection
 
+__all__ = [
+    "PyTorchJsonEncoder",
+    "PyTorchJsonDecoder",
+]
+
 
 class PyTorchJsonEncoder(json.JSONEncoder):
     def default(self, o: Any) -> Any:
@@ -14,16 +19,9 @@ class PyTorchJsonEncoder(json.JSONEncoder):
 
 class PyTorchJsonDecoder(json.JSONDecoder):
     def to_tensor(self, d: Mapping[str, Any]) -> torch.Tensor:
-        if (
-            isinstance(d, Mapping)
-            and "type" in d
-            and d["type"] == "torch.Tensor"
-            and "content" in d
-        ):
+        if isinstance(d, Mapping) and "type" in d and d["type"] == "torch.Tensor" and "content" in d:
             return torch.tensor(d["content"])
-        return {
-            k: apply_to_collection(v, Mapping, self.to_tensor) for k, v in d.items()
-        }
+        return {k: apply_to_collection(v, Mapping, self.to_tensor) for k, v in d.items()}
 
     def decode(self, s: str, *args, **kwargs) -> Any:
         decoded = super().decode(s, *args, **kwargs)

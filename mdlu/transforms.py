@@ -8,6 +8,17 @@ from torchio.transforms.preprocessing.spatial.resample import Resample
 
 from mdlu.data.modality import ImageModality
 
+__all__ = [
+    "DefaultPreprocessing",
+    "ResampleOnehot",
+    "ResampleAndCropOrPad",
+    "CropToNonZero",
+    "NNUnetNormalization",
+    "RescaleIntensityPercentiles",
+    "DefaultSpatialAugmentation",
+    "CropOrPadPerImage",
+]
+
 
 class DefaultSpatialPreIntensityPreprocessingTransforms(tio.transforms.Compose):
     def __init__(
@@ -38,9 +49,7 @@ class DefaultSpatialPreIntensityPreprocessingTransforms(tio.transforms.Compose):
                 )
             )
         else:
-            trafos.append(
-                Resample(target=target_spacing, image_interpolation=interpolation)
-            )
+            trafos.append(Resample(target=target_spacing, image_interpolation=interpolation))
 
         super().__init__(trafos)
 
@@ -128,9 +137,7 @@ class ResampleOnehot(Resample):
             temp_scalar_images.append(k)
         subject = super().apply_transform(subject)
         for k in temp_scalar_images:
-            subject[k] = tio.data.LabelMap(
-                tensor=subject[k].data, affine=subject[k].affine
-            )
+            subject[k] = tio.data.LabelMap(tensor=subject[k].data, affine=subject[k].affine)
 
         subject = self.to_categorical(subject)
         return subject
@@ -187,9 +194,7 @@ class CropToNonZero(tio.transforms.Transform):
         self.key = key
 
     @staticmethod
-    def crop_to_nonzero(
-        image: tio.data.Image, *additional_images: tio.data.Image, **padding_kwargs
-    ) -> None:
+    def crop_to_nonzero(image: tio.data.Image, *additional_images: tio.data.Image, **padding_kwargs) -> None:
         """
         crops tensor to non-zero and additional tensor to the same part of the
         tensor if given
@@ -258,23 +263,16 @@ class NNUnetNormalization(tio.transforms.ZNormalization):
         self.num_target_elems = torch.tensor(target_size).prod()
         self.crop_or_pad_trafo = CropOrPadPerImage(target_shape=target_size)
 
-    def apply_normalization(
-        self, subject: tio.data.Subject, image_name: str, mask: torch.Tensor
-    ) -> None:
+    def apply_normalization(self, subject: tio.data.Subject, image_name: str, mask: torch.Tensor) -> None:
 
         # no image modality is given, use default (non-CT) behavior
         if self.image_modality is None or self.image_modality != ImageModality.CT:
             # not more than 25% of the voxels are cropped away
-            if (
-                torch.tensor(subject.spatial_shape).prod() * 0.75
-                < self.num_target_elems
-            ):
+            if torch.tensor(subject.spatial_shape).prod() * 0.75 < self.num_target_elems:
                 return super().apply_normalization(subject, image_name, mask)
 
             cropped_tensor = self.crop_or_pad_trafo(
-                tio.data.Subject(
-                    {image_name: tio.data.ScalarImage(tensor=subject[image_name].data)}
-                )
+                tio.data.Subject({image_name: tio.data.ScalarImage(tensor=subject[image_name].data)})
             )[image_name].data
             # masking for foreground
             mask = cropped_tensor > 0
@@ -284,9 +282,7 @@ class NNUnetNormalization(tio.transforms.ZNormalization):
 
         else:
             if self.dataset_mean is None or self.dataset_std is None:
-                raise ValueError(
-                    "dataset mean and std can only be None if the dataset modality is not CT."
-                )
+                raise ValueError("dataset mean and std can only be None if the dataset modality is not CT.")
 
             mean = self.dataset_mean
             std = self.dataset_std
@@ -302,9 +298,7 @@ class NNUnetNormalization(tio.transforms.ZNormalization):
         image.set_data(tensor)
 
 
-class LabelToCategorical(
-    tio.transforms.preprocessing.label.label_transform.LabelTransform
-):
+class LabelToCategorical(tio.transforms.preprocessing.label.label_transform.LabelTransform):
     def apply_transform(self, subject):
         for k, v in self.get_images_dict(subject).items():
             if isinstance(v, tio.data.LabelMap):
@@ -323,9 +317,7 @@ class RescaleIntensityPercentiles(tio.transforms.RescaleIntensity):
 
 
 class DefaultSpatialAugmentation(tio.transforms.Compose):
-    def __init__(
-        self, image_modality: ImageModality, include_deformation: bool = False, p=0.25
-    ):
+    def __init__(self, image_modality: ImageModality, include_deformation: bool = False, p=0.25):
         trafos = []
         if image_modality is not None:
             trafos += [
@@ -333,9 +325,7 @@ class DefaultSpatialAugmentation(tio.transforms.Compose):
                     axes=tuple(range(ImageModality.get_dimensionality(image_modality))),
                     p=p,
                 ),
-                tio.transforms.RandomFlip(
-                    tuple(range(ImageModality.get_dimensionality(image_modality))), p=p
-                ),
+                tio.transforms.RandomFlip(tuple(range(ImageModality.get_dimensionality(image_modality))), p=p),
             ]
 
         trafos.append(tio.transforms.RandomAffine(p=p))
@@ -379,9 +369,7 @@ class DefaultAugmentation(tio.transforms.Compose):
                 include_deformation=include_deformation,
                 p=spatial_prob,
             ),
-            DefaultIntensityAugmentation(
-                image_modality=image_modality, p=intensity_prob
-            ),
+            DefaultIntensityAugmentation(image_modality=image_modality, p=intensity_prob),
         ]
         super().__init__(trafos)
 
@@ -443,9 +431,7 @@ def extract_nonzero_bounding_box_from_tensor(
             device=tensor.device,
         )
         # ensure this is an even number
-        ranges[idx, :] = (
-            torch.ceil((bounds[:, 1] - bounds[:, 0]).float() / 2) * 2
-        ).long()[
+        ranges[idx, :] = (torch.ceil((bounds[:, 1] - bounds[:, 0]).float() / 2) * 2).long()[
             1:
         ]  # extract max range of all channels
         centers[idx, :] = bounds[1:, 0] + ranges[idx] // 2
@@ -482,9 +468,7 @@ def crop_tensor_to_bounding_box(
     abs_min_range = (centers - max_range / 2.0).min(0)[0]
 
     # calculate padding on the first side per dim
-    first_paddings = torch.where(
-        abs_min_range < 0, abs_min_range.abs(), torch.zeros_like(abs_min_range)
-    )
+    first_paddings = torch.where(abs_min_range < 0, abs_min_range.abs(), torch.zeros_like(abs_min_range))
 
     # calculate padding on the last side per dim
     last_paddings = torch.clamp(
@@ -518,13 +502,9 @@ def crop_tensor_to_bounding_box(
         if len(mins) == 2:
             out[idx] = tensor[idx][..., mins[0] : maxs[0], mins[1] : maxs[1]]
             if additional_tensor is not None:
-                additional_out[idx] = additional_tensor[idx][
-                    ..., mins[0] : maxs[0], mins[1] : maxs[1]
-                ]
+                additional_out[idx] = additional_tensor[idx][..., mins[0] : maxs[0], mins[1] : maxs[1]]
         elif len(mins) == 3:
-            out[idx] = tensor[idx][
-                ..., mins[0] : maxs[0], mins[1] : maxs[1], mins[2] : maxs[2]
-            ]
+            out[idx] = tensor[idx][..., mins[0] : maxs[0], mins[1] : maxs[1], mins[2] : maxs[2]]
             if additional_tensor is not None:
                 additional_out[idx] = additional_tensor[idx][
                     ..., mins[0] : maxs[0], mins[1] : maxs[1], mins[2] : maxs[2]
@@ -570,9 +550,7 @@ def crop_tensor_to_nonzero(
 class CropOrPadPerImage(tio.transforms.CropOrPad):
     def apply_transform(self, subject: tio.data.Subject) -> tio.data.Subject:
 
-        for k, v in subject.get_images_dict(
-            intensity_only=False, include=self.include, exclude=self.exclude
-        ).items():
+        for k, v in subject.get_images_dict(intensity_only=False, include=self.include, exclude=self.exclude).items():
             part_sub = type(subject)({k: v})
             subject[k] = super().apply_transform(part_sub)[k]
         return subject

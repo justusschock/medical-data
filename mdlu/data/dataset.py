@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import gc
 import importlib
 import json
 import os
-import gc
-from copy import deepcopy
 from abc import ABCMeta, abstractmethod
 from collections import Counter, namedtuple
+from copy import deepcopy
 from functools import partial
 from itertools import chain
 from operator import attrgetter, itemgetter
@@ -21,9 +21,7 @@ from tqdm.contrib.concurrent import process_map
 from mdlu.data.modality import ImageModality
 from mdlu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder
 
-ImageStats = namedtuple(
-    "ImageStats", ("spacing", "spatial_shape", "unique_intensities", "intensity_counts")
-)
+ImageStats = namedtuple("ImageStats", ("spacing", "spatial_shape", "unique_intensities", "intensity_counts"))
 
 __all__ = ["AbstractDataset", "AbstractDiscreteLabelDataset"]
 
@@ -58,14 +56,8 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         image_modality: ImageModality | int,
         image_stat_key: str | None = None,
         label_stat_key: str | None = None,
-        preprocessing: (
-            tio.transforms.Transform
-            | Callable[[tio.data.Subject], tio.data.Subject]
-            | None
-        ) = "default",
-        augmentation: tio.transforms.Transform
-        | Callable[[tio.data.Subject], tio.data.Subject]
-        | None = None,
+        preprocessing: (tio.transforms.Transform | Callable[[tio.data.Subject], tio.data.Subject] | None) = "default",
+        augmentation: tio.transforms.Transform | Callable[[tio.data.Subject], tio.data.Subject] | None = None,
         statistic_collection_nonzero: bool = False,
         num_stat_collection_procs: int = 0,
         num_save_procs: int = 0,
@@ -94,9 +86,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         preprocessed_parsed_subjects: list[tio.data.Subject] | tuple | None = None
         if preprocessed_path is not None and os.path.exists(preprocessed_path):
             try:
-                preprocessed_parsed_subjects, dataset_stats = self.restore_preprocessed(
-                    preprocessed_path
-                )
+                preprocessed_parsed_subjects, dataset_stats = self.restore_preprocessed(preprocessed_path)
             except Exception as e:
                 # raise Warning for exception
                 preprocessed_parsed_subjects, dataset_stats = (), None
@@ -129,9 +119,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
                 preprocessing_trafo=preprocessing_trafo,
                 num_procs=num_save_procs,
             )
-            preprocessed_parsed_subjects, _ = self.restore_preprocessed(
-                preprocessed_path
-            )
+            preprocessed_parsed_subjects, _ = self.restore_preprocessed(preprocessed_path)
 
         elif preprocessed_path is not None and preprocessing_trafo is not None:
             transforms.append(preprocessing_trafo)
@@ -161,9 +149,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
     @staticmethod
     def get_single_image_stats(image: tio.data.Image) -> ImageStats:
-        uniques, counts = image.tensor[image.tensor > image.tensor.min()].unique(
-            return_counts=True
-        )
+        uniques, counts = image.tensor[image.tensor > image.tensor.min()].unique(return_counts=True)
         uniques, counts = uniques.tolist(), counts.tolist()
 
         return ImageStats(image.spacing, image.spatial_shape, uniques, counts)
@@ -234,7 +220,6 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
         return stats
 
-
     def collect_dataset_stats(
         self,
         *subjects: tio.data.Subject,
@@ -263,12 +248,8 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             "label": self.aggregate_label_stats(*map(itemgetter(1), results)),
         }
 
-    def get_preprocessing_transforms(
-        self, preprocessing
-    ) -> tio.transforms.Transform | None:
-        if preprocessing is None or (
-            isinstance(preprocessing, str) and preprocessing.lower() == "none"
-        ):
+    def get_preprocessing_transforms(self, preprocessing) -> tio.transforms.Transform | None:
+        if preprocessing is None or (isinstance(preprocessing, str) and preprocessing.lower() == "none"):
             return None
         elif callable(preprocessing):
             return preprocessing
@@ -279,12 +260,8 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         else:
             raise ValueError(f"Invalid Preprocessing: {preprocessing}")
 
-    def get_augmentation_transforms(
-        self, augmentation
-    ) -> tio.transforms.Transform | None:
-        if augmentation is None or (
-            isinstance(augmentation, str) and augmentation.lower() == "none"
-        ):
+    def get_augmentation_transforms(self, augmentation) -> tio.transforms.Transform | None:
+        if augmentation is None or (isinstance(augmentation, str) and augmentation.lower() == "none"):
             return None
         elif callable(augmentation):
             return augmentation
@@ -300,9 +277,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         idx: int,
         subject: tio.data.Subject,
         save_path: str | Path,
-        preprocessing_trafo: tio.transform.Transform
-        | Callable[[tio.data.Subject], tio.data.Subject]
-        | None,
+        preprocessing_trafo: tio.transform.Transform | Callable[[tio.data.Subject], tio.data.Subject] | None,
         total_num_subjects: int,
     ):
         # do all the copying here to avoid loading the acutal subject.
@@ -312,9 +287,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         if preprocessing_trafo is not None:
             subject_copy = preprocessing_trafo(subject_copy)
 
-        save_path = os.path.join(
-            save_path, str(idx).zfill(len(str(total_num_subjects)))
-        )
+        save_path = os.path.join(save_path, str(idx).zfill(len(str(total_num_subjects))))
         os.makedirs(save_path, exist_ok=True)
 
         tio_images = {}
@@ -326,9 +299,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             else:
                 to_dump[k] = v
 
-        to_dump["TORCHIO_SUBJECT_CLASS"] = ".".join(
-            (type(subject).__module__, type(subject).__qualname__)
-        )
+        to_dump["TORCHIO_SUBJECT_CLASS"] = ".".join((type(subject).__module__, type(subject).__qualname__))
         to_dump["TORCHIO_IMAGE_TYPES"] = tio_images
 
         with open(os.path.join(save_path, "subject.json"), "w") as f:
@@ -338,9 +309,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         self,
         args: tuple[int, tio.data.Subject],
         save_path: str | Path,
-        preprocessing_trafo: tio.transform.Transform
-        | Callable[[tio.data.Subject], tio.data.Subject]
-        | None,
+        preprocessing_trafo: tio.transform.Transform | Callable[[tio.data.Subject], tio.data.Subject] | None,
         total_num_subjects: int,
     ):
         return self.save_single_preprocessed_subject(
@@ -359,9 +328,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
     def state_dict(self) -> dict[str, dict[str, Any]]:
         return {"image": self.image_state_dict(), "label": self.label_state_dict()}
 
-    def save_preprocessed(
-        self, *subjects, save_path, preprocessing_trafo, num_procs
-    ) -> None:
+    def save_preprocessed(self, *subjects, save_path, preprocessing_trafo, num_procs) -> None:
         func = partial(
             self._wrapped_save_single_preprocessed_subject,
             save_path=save_path,
@@ -392,9 +359,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
                 cls=PyTorchJsonEncoder,
             )
 
-    def restore_preprocessed(
-        self, preprocessed_path
-    ) -> tuple[list[tio.data.Subject], dict[str, Any]]:
+    def restore_preprocessed(self, preprocessed_path) -> tuple[list[tio.data.Subject], dict[str, Any]]:
         with open(os.path.join(preprocessed_path, "dataset.json")) as f:
             dset_meta = json.load(f, cls=PyTorchJsonDecoder)
 
@@ -431,9 +396,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
             images = subject_meta.pop("TORCHIO_IMAGE_TYPES", {})
             for k, v in images.items():
-                subject_meta[k] = self.restore_mapping[v](
-                    os.path.join(sub, k + self.extension_mapping[v])
-                )
+                subject_meta[k] = self.restore_mapping[v](os.path.join(sub, k + self.extension_mapping[v]))
 
             subjects.append(subject_cls(subject_meta))
 
@@ -457,21 +420,15 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         other_spacings = [target_spacing[i] for i in other_axes]
         other_sizes = [target_size[i] for i in other_axes]
 
-        has_aniso_spacing = target_spacing[worst_spacing_axis] > (
-            self.anisotropy_threshold * max(other_spacings)
-        )
-        has_aniso_voxels = target_size[
-            worst_spacing_axis
-        ] * self.anisotropy_threshold < min(other_sizes)
+        has_aniso_spacing = target_spacing[worst_spacing_axis] > (self.anisotropy_threshold * max(other_spacings))
+        has_aniso_voxels = target_size[worst_spacing_axis] * self.anisotropy_threshold < min(other_sizes)
 
         if has_aniso_spacing and has_aniso_voxels:
             spacings_of_that_axis = self.spacings[:, worst_spacing_axis]
             target_spacing_of_that_axis = torch.quantile(spacings_of_that_axis, 0.1)
             # don't let the spacing of that axis get higher than the other axes
             if target_spacing_of_that_axis < max(other_spacings):
-                target_spacing_of_that_axis = (
-                    max(max(other_spacings), target_spacing_of_that_axis) + 1e-5
-                )
+                target_spacing_of_that_axis = max(max(other_spacings), target_spacing_of_that_axis) + 1e-5
             target_spacing[worst_spacing_axis] = target_spacing_of_that_axis
 
         return target_spacing
@@ -482,11 +439,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
     @property
     def sizes_after_resampling(self) -> torch.Tensor:
-        return (
-            (self.spatial_shapes.float() / self.spacings * self.median_spacing)
-            .round()
-            .long()
-        )
+        return (self.spatial_shapes.float() / self.spacings * self.median_spacing).round().long()
 
     @property
     def median_size_after_resampling(self) -> torch.Tensor:
@@ -499,8 +452,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
     @property
     def mean_intensity_value(self) -> torch.Tensor:
         return torch.tensor(
-            sum(float(k) * float(v) for k, v in self.intensity_counts.items())
-            / sum(self.intensity_counts.values())
+            sum(float(k) * float(v) for k, v in self.intensity_counts.items()) / sum(self.intensity_counts.values())
         )
 
     @property
@@ -557,15 +509,7 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
 
     def aggregate_label_stats(self, *label_stats):
         return {
-            "class_values": torch.tensor(
-                sorted(
-                    set(
-                        chain.from_iterable(
-                            map(itemgetter("class_values"), label_stats)
-                        )
-                    )
-                )
-            )
+            "class_values": torch.tensor(sorted(set(chain.from_iterable(map(itemgetter("class_values"), label_stats)))))
         }
 
     @property
