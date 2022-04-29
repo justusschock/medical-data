@@ -21,13 +21,21 @@ jobs:
           pip install
           build
           --user
+
       - name: Build a binary wheel and a source tarball
         run: >-
           python -m
           build
-          --sdist
-          --wheel
           --outdir dist/
 
-      - name: Install Package
-        run: pip install .
+      - name: Install Package Wheel
+        run: pip install ./dist/*.whl
+
+      - name: Import Package
+        run: python -c "import mdlu; mdlu.__version__"
+
+      - name: Install Package Sdist
+        run: pip install ./dist/*.tar.gz --force-reinstall
+
+      - name: Import Package
+        run: python -c "import mdlu; mdlu.__version__"
