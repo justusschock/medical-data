@@ -59,7 +59,6 @@ jobs:
         with:
           context: .
           file: dockers/Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
           # arm64 has issues compiling SimpleITK from source
           # platforms: linux/amd64,linux/arm64
           platforms: linux/amd64
