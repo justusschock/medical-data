@@ -47,13 +47,13 @@ jobs:
         with:
           images: ${{ github.repository }}
           tags: |
-            type=pep440,pattern={{version}}-${{ matrix.accelerator }}
             type=raw,value=latest-${{ matrix.accelerator }}
 
       - name: Build
         # publish master/release
         uses: docker/build-push-action@v2
         with:
+          push: ${{ github.event_name != 'pull_request' }}
           context: .
           file: dockers/Dockerfile
           # arm64 has issues compiling SimpleITK from source
@@ -67,7 +67,6 @@ jobs:
             ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          load: true
 
         timeout-minutes: 50
 
@@ -75,10 +74,4 @@ jobs:
         run: |
             docker run --rm ${{ github.repository }}:latest-${{ matrix.accelerator }} python -c "import mdlu; print(mdlu.__version__)"
 
-      - name: Push Image
-        if: ${{ github.event_name != 'pull_request' }}
-        uses: docker/build-push-action@v2
-        with:
-          push: true
-          tags: ${{ github.repository }}:latest-${{ matrix.accelerator }}
-          context: .
+     
