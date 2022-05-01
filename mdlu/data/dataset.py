@@ -28,6 +28,133 @@ __all__ = ["AbstractDataset", "AbstractDiscreteLabelDataset"]
 
 # TODO: Add possibility to also add intensity mean and std manually
 class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
+    """
+    Abstract Dataset class defining the interface for all datasets.
+    For usage, subclass this class and implement at least ``parse_subjects``.
+
+    The workflow within the dataset is as follows:
+
+      ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+      │``__init__``            ┌──────────┐                                                              ┌────────────────┐             │
+      │                        │First Run │                                                              │ Subsequent Run │             │
+      │                        └──────────┘                                                              └────────────────┘             │
+      │                             │                                                                            │                      │
+      │                             │                                                                   ┌────────┴──────────┐           │
+      │                             ▼                                                                   ▼                   ▼           │
+      │                      ┌──────────────┐                                                    ┌──────────────┐  ┌──────────────────┐ │
+      │                      │Parse Subjects│                                                    │Parse Subjects│  │Parse Preprocessed│ │
+      │                      │              │                                                    │              │  │     Subjects     │ │
+      │                      └──────────────┘                                                    └──────────────┘  └──────────────────┘ │
+      │                              ┌────────────────────────Not Equal──────────────┐                   │                   │          │
+      │                              │                                               │                   └─────────┬─────────┘          │
+      │                              ▼                                               │                             ▼                    │
+      │ ┌─────────────────────────────────────────────────────────┐                  │                 ┌───────────────────────┐        │
+      │ │                    For each Sample:                     │                  │                 │Check whether Number of│        │
+      │ │  ┌─────────────┐   (Optionally Parallelized)            │                  └─────────────────│   Subjects is equal   │        │
+      │ │  │ Load Sample │──┬─────────────────────┐               │                                    └───────────────────────┘        │
+      │ │  └─────────────┘  │                     │               │                                                │                    │
+      │ │                   │                     │               │                                             Equal                   │
+      │ │              ┌────┘                     │               │                                                │                    │
+      │ │              │                          │               │                                                │                    │
+      │ │              ▼                          ▼               │                                                ▼                    │
+      │ │  ┌──────────────────────┐   ┌──────────────────────┐    │                                    ┌───────────────────────┐        │
+      │ │  │    Extract image     │   │    Extract Label     │    │                                    │ Load Image And Label  │        │
+      │ │  │      Statistics      │   │      Statistics      │    │                                    │      Statistics       │        │
+      │ │  └──────────────────────┘   └──────────────────────┘    │                                    └───────────────────────┘        │
+      │ │              │                          │               │                                                │                    │
+      │ └──────────────┼──────────────────────────┼───────────────┘                                                │                    │
+      │                ▼                          ▼                                                                │                    │
+      │    ┌──────────────────────┐   ┌──────────────────────┐                                                     │                    │
+      │    │ Aggregate All Image  │   │ Aggregate All Label  │                                                     │                    │
+      │    │      Statistics      │   │      Statistics      │                                                     │                    │
+      │    │                      │   │                      │                                                     │                    │
+      │    └──────────────────────┘   └──────────────────────┘                                                     │                    │
+      │                │                          │                                                                │                    │
+      │                │                          │                                           ┌────────────────────┤                    │
+      │                └────────────┬─────────────┘                                           │                    │                    │
+      │                             │                                                         │                    │                    │
+      |                             ▼                      ┌─────────────────────────┐        │                    │                    │
+      │               ┌──────────────────────────┐         │    Save Preprocessed    │        │                    │                    │
+      │               │  Preprocess All Samples  │────────▶│         Samples         │        │                    │                    │
+      │               └──────────────────────────┘         │(Optionally Parallelized)│        │                    │                    │
+      │                             │                      └─────────────────────────┘        │                    │                    │
+      │                             ▼                                   │                     │                    │                    │
+      │               ┌──────────────────────────┐                      │                     ▼                    │                    │
+      │               │   Save Image And Label   │                      │ ┌──────────────────────────────────────┐ │                    │
+      │               │        Statistics        │                      │ │                                      │ │                    │
+      │               └──────────────────────────┘                      │ │ Instantiate Augmentation Transforms  │ │                    │
+      │                             │                         ┌─────────┼▶│                                      │ │                    │
+      │                             │                         │         │ │                                      │ │                    │
+      │                             └─────────────────────────┘         │ └──────────────────────────────────────┘ │                    │
+      │                                                                 └─────────────────────┬────────────────────┤                    │
+      │                                                                                       │                    │                    │
+      │                                                                                       │                    │                    │
+      │                                                                                       │                    │                    │
+      │                                                                                       │                    │                    │
+      └───────────────────────────────────────────────────────────────────────────────────────┼────────────────────┼────────────────────┘
+                                                                                              │                    │
+                                                                                              │                    │
+                                ┌─────────────────────────────────────────────────────────────┼────────────────────▼───────────────────┐
+    ┌───────────────────┐       │``__getitem__``                                              │ ┌────────────────────────────────────┐ │
+    │                   │       │                                                             │ │                                    │ │
+    │Dataloader queries │       │                  Fetch Item                                 │ │List of Preprocessed Samples On Disk│ │
+    │  Dataset Sample   │───────┼──────────────────From List──────────────────────────────────┼▶│        (Not Cached in RAM)         │ │
+    │                   │       │                                                             │ │                                    │ │
+    └───────────────────┘       │                                                             │ └────────────────────────────────────┘ │
+            ▲                   │                                                             │                    │                   │
+            │                   │                                                             │                    │                   │
+            │                   │                                                             │                    │                   │
+            │                   │                                                             │                    │                   │
+            │                   │                                                             │             Load   │                   │
+            │                   │                                                             ├─────────Preprocessed                   │
+            │                   │                                                             │            Sample                      │
+            │                   │                                                             │                                        │
+            │                   │                                                             │                                        │
+            │                   │                                                             │                                        │
+            │                   │                                                             ▼                                        │
+            │                   │                         ┌──────────────────────────────────────────────────────────────────────┐     │
+            │                   │      Return             │                                                                      │     │
+            └───────────────────┼────Augmented ───────────│                          Apply Augmentation                          │     │
+                                │      Sample             │                                                                      │     │
+                                │                         └──────────────────────────────────────────────────────────────────────┘     │
+                                │                                                                                                      │
+                                │                                                                                                      │
+                                │                                                                                                      │
+                                │                                                                                                      │
+                                └──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+    For extracting custom image and label statistics, you can overwrite the following ``staticmethods`` :
+
+    - ``get_single_image_stats``
+    - ``get_single_label_stats``
+    - ``aggregate_image_stats``
+    - ``aggregate_label_stats``
+
+    And add your extracted statistics to the ``image_stat_attr_keys`` and ``label_stat_attr_keys`` tuples.
+
+    Per default the following statistics are extracted:
+
+    - image spacings
+    - spatial image shape
+    - image intensity occurence counts
+
+    and based on that the following attributes are calculated:
+    
+    - :attr:`median_spacing` : the median spacing of all images
+    - :attr:`computed_target_spacing` : the target spacing computed by the dataset
+    - :attr:`target_spacing` : the externally passed target spacing if provided else the computed one
+    - :attr:`sizes_after_resampling` : the sizes of the images after resampling to target spacing
+    - :attr:`median_size_after_resampling` : the median size of all images after resampling to target spacing
+    - :attr:`target_size` : the externally passed target size if provided else the computed one
+    - :attr:`mean_intensity_value` : the mean intensity value of all images
+    - :attr:`std_intensity_value` : the standard deviation of all images
+    - :attr:`max_size_after_resampling` : the maximum size of all images after resampling to target spacing
+    - :attr:`min_size_after_resampling` : the minimum size of all images after resampling to target spacing
+    - :attr:`default_preprocessing` : the default preprocessing applied to all images and labels
+    - :attr:`default_augmentation` : the default augmentation applied to all images and labels
+
+    Per default, no label statistics are extracted, as the labels are highly task-dependent.
+    """
     extension_mapping = {
         tio.constants.INTENSITY: ".nii.gz",
         tio.constants.LABEL: ".nii.gz",
@@ -53,7 +180,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         self,
         *paths: Path | str,
         preprocessed_path: Path | str | None,
-        image_modality: ImageModality | int,
+        image_modality: ImageModality | int | str,
         image_stat_key: str | None = None,
         label_stat_key: str | None = None,
         preprocessing: (tio.transforms.Transform | Callable[[tio.data.Subject], tio.data.Subject] | None) = "default",
@@ -65,9 +192,37 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         target_spacing: Sequence[float] | torch.Tensor | None = None,
         target_size: Sequence[int] | torch.Tensor | None = None,
     ):
+
+        """
+
+        Args:
+            paths: Paths to the data (images, labels and everything else). Just used to pass 1:1 to ``parse_subjects``.
+            preprocessed_path: Path to the preprocessed data. If not None, will attempt to load the preprocessed data 
+                if the path exists and will sotre the preprocessed data there if the path does not yet exist.
+            image_modality: The modality of the image. Can be either an instance of :class:`ImageModality`, an integer or string from the following list:
+                - ``PHOTOGRAPH`` | 0
+                - ``XRAY``       | 1
+                - ``MR``         | 2
+                - ``CT``         | 3
+            image_stat_key: The key of the image within the subject to extract the statistics from. If None, will use the first image.
+            label_stat_key: The key of the label within the subject to extract the statistics from. If None, won't extract any statistics.
+            preprocessing: The preprocessing to apply to the subjects. If None, will not apply any preprocessing. If "default", will apply the :attr`default_preprocessing`.
+            augmentation: The augmentation to apply to the subjects. If None, will not apply any augmentation. If "default", will apply the :attr`default_augmentation`.
+            statistic_collection_nonzero: If True, will crop to nonzero before collecting statistics.
+            num_stat_collection_procs: The number of processes to use for collecting the statistics. 
+                If 0, will only use the main process. If 1, will also just use one process (but a spawned one), if >1, will use multiple processes. 
+                Using 0 and 1 will be similarly fast, but using 0 won't do any pickling. Switch between 0 and 1 for debugging purposes regarding pickling.
+            num_save_procs: The number of processes to use for saving the data. 
+                If 0, will only use the main process. If 1, will also just use one process (but a spawned one), if >1, will use multiple processes.
+            anisotropy_threshold: If largest spacing > (anisotropy_threshold * second largest spacing), an image is considered to be anisotropic.
+            target_spacing: The target spacing to use for resampling. If None, will resample to the computed target spacing.
+            target_size: The target size to use for resampling. If None, will crop or pad to the computed target size.
+        """
         # need to do this early on as torch hacks some custom things (like __getattr__)
         torch.utils.data.Dataset.__init__(self)
         parsed_subjects = self.parse_subjects(*paths)
+        if isinstance(image_modality, str):
+            image_modality = ImageModality.from_str(image_modality)
 
         self.image_modality = image_modality
         self.image_stats_key = image_stat_key
@@ -137,29 +292,77 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
     @abstractmethod
     def parse_subjects(self, *paths: Path | str) -> Sequence[tio.data.Subject]:
+        """
+        Parses the subjects from the given paths.
+        To be implemented in subclasses by the user.
+
+        Args:
+            paths: Paths to the data (images, labels and everything else).
+        Returns:
+            A sequence of subjects (ideally not yet loaded).
+        """
         pass
 
     def set_image_stat_attributes(self, image_stats: dict[str, torch.Tensor | Counter]):
+        """
+        Sets the image statistics attributes.
+        
+        Args:
+            image_stats: The image statistics to set as attributes.
+
+        """
         for name in self.image_stat_attr_keys:
             setattr(self, name, image_stats[name])
 
     def set_label_stat_attributes(self, label_stats: dict[str, Any]):
+        """
+        Sets the label statistics attributes.
+        
+        Args:
+            label_stats: The label statistics to set as attributes.
+        """
         for name in self.label_stat_attr_keys:
             setattr(self, name, label_stats[name])
 
     @staticmethod
-    def get_single_image_stats(image: tio.data.Image) -> ImageStats:
+    def get_single_image_stats(image: tio.data.Image) -> Any | ImageStats:
+        """
+        Gets the image statistics for a single image.
+
+        Args:
+            image: The image to get the statistics for.
+        Returns:
+            The image statistics (spacing, spatial_shape, unique values, occurence counts).
+        """
         uniques, counts = image.tensor[image.tensor > image.tensor.min()].unique(return_counts=True)
         uniques, counts = uniques.tolist(), counts.tolist()
 
         return ImageStats(image.spacing, image.spatial_shape, uniques, counts)
 
     @staticmethod
-    def get_single_label_stats(label: Any, *args: Any, **kwargs: Any):
+    def get_single_label_stats(label: Any, *args: Any, **kwargs: Any) -> Any:
+        """
+        Gets the label statistics for a single label.
+        
+        Args:
+            label: The label to get the statistics for.
+
+        Returns:
+            The label statistics (None per default)
+        """
         pass
 
     @staticmethod
-    def aggregate_image_stats(*image_stats: ImageStats):
+    def aggregate_image_stats(*image_stats: Any | ImageStats) -> Dict[str, Any | torch.Tensor]:
+        """
+        Aggregates the image statistics.
+        
+        Args:
+            image_stats: The image statistics to aggregate.
+        
+        Returns:
+            Dictionary with aggregated image statistics.
+        """
         intensity_values: Counter[float] = Counter()
 
         spacings = tuple(map(attrgetter("spacing"), image_stats))
@@ -177,8 +380,18 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         }
 
     @staticmethod
-    def aggregate_label_stats(*stats: Any):
-        return
+    def aggregate_label_stats(*stats: Any) -> Dict[str, Any] | None:
+        """
+        Aggregates the label statistics.
+
+        Args:
+            stats: The label statistics to aggregate.
+
+        Returns:
+            Dictionary with aggregated label statistics.
+
+        """
+        pass
 
     def collect_stats_single_subject(
         self,
@@ -186,7 +399,19 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         image_stat_key: str | None,
         label_stat_key: str | None,
         crop_to_nonzero: bool = False,
-    ):
+    ) -> Tuple[ImageStats | Any, Any | None]:
+        """
+        Collects the statistics for a single subject.
+
+        Args:
+            subject: The subject to collect the statistics for.
+            image_stat_key: The key to use for the image statistics.
+            label_stat_key: The key to use for the label statistics.
+            crop_to_nonzero: Whether to crop the image to non-zero values.
+        Returns:
+            The image statistics and the label statistics.
+
+        """
 
         # do all the copying here to avoid loading the acutal subject.
         # loading a copy is fine as this will be garbage collected at the end of the function
@@ -227,7 +452,21 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         label_stat_key: str | None,
         crop_to_nonzero: bool,
         num_procs: int,
-    ):
+    ) -> Dict[str, Dict[str, Any | None]]:
+        """
+        Collects the statistics for the whole dataset.
+
+        Args:
+            subjects: The subjects to collect the statistics for.
+            image_stat_key: The key to use for the image statistics.
+            label_stat_key: The key to use for the label statistics.
+            crop_to_nonzero: Whether to crop the image to non-zero values.
+            num_procs: The number of processes to use.
+        
+        Returns:
+            The collected statistics.
+
+        """
         func = partial(
             self.collect_stats_single_subject,
             image_stat_key=image_stat_key,
@@ -249,6 +488,19 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         }
 
     def get_preprocessing_transforms(self, preprocessing) -> tio.transforms.Transform | None:
+        """
+        Gets the preprocessing transforms.
+        
+        Args:
+            preprocessing: The preprocessing to get the transforms for.
+            
+        Returns:
+            The preprocessing transforms.
+            
+        Raises:
+            ValueError: If the preprocessing is not supported.
+        
+        """
         if preprocessing is None or (isinstance(preprocessing, str) and preprocessing.lower() == "none"):
             return None
         elif callable(preprocessing):
@@ -261,6 +513,19 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             raise ValueError(f"Invalid Preprocessing: {preprocessing}")
 
     def get_augmentation_transforms(self, augmentation) -> tio.transforms.Transform | None:
+        """
+        Gets the augmentation transforms.
+        
+        Args:
+            augmentation: The augmentation to get the transforms for.
+            
+        Returns:
+            The augmentation transforms.
+                
+        Raises:
+            ValueError: If the augmentation is not supported.
+                
+        """
         if augmentation is None or (isinstance(augmentation, str) and augmentation.lower() == "none"):
             return None
         elif callable(augmentation):
@@ -279,7 +544,18 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         save_path: str | Path,
         preprocessing_trafo: tio.transform.Transform | Callable[[tio.data.Subject], tio.data.Subject] | None,
         total_num_subjects: int,
-    ):
+    ) -> None:
+        """
+        Preprocesses and saves a single preprocessed subject to a json file for metadata, an image and a label file,
+
+        Args:
+            idx: The index of the subject.
+            subject: The subject to save.
+            save_path: The path to save the subject to.
+            preprocessing_trafo: The preprocessing transform to use.
+            total_num_subjects: The total number of subjects.
+
+        """
         # do all the copying here to avoid loading the acutal subject.
         # loading a copy is fine as this will be garbage collected at the end of the function
         # loading the original subject which is also referenced somewhere else would lead to a memory leak
@@ -311,7 +587,18 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         save_path: str | Path,
         preprocessing_trafo: tio.transform.Transform | Callable[[tio.data.Subject], tio.data.Subject] | None,
         total_num_subjects: int,
-    ):
+    ) -> None:
+        """
+        Wrapper for the save_single_preprocessed_subject function to enable its usage with multiprocessing.
+
+        Args:
+            args: The arguments forward to the function (usually index and Subject).
+            save_path: The path to save the subject to.
+            preprocessing_trafo: The preprocessing transform to use.
+            total_num_subjects: The total number of subjects.
+
+        """
+        self.save_single_preprocessed_subject(*args, save_path=save_path, preprocessing_trafo=preprocessing_trafo, total_num_subjects=total_num_subjects)
         return self.save_single_preprocessed_subject(
             *args,
             save_path=save_path,
@@ -320,15 +607,46 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         )
 
     def image_state_dict(self) -> dict[str, Any]:
+        """
+        Returns the state dict of the image statistics across the whole dataset.
+        
+        Returns:
+            The state dict of the image statistics.
+        
+        """
         return {k: getattr(self, k) for k in self.image_stat_attr_keys}
 
     def label_state_dict(self) -> dict[str, Any]:
+        """
+        Returns the state dict of the label statistics across the whole dataset.
+        
+        Returns:
+            The state dict of the label statistics.
+        
+        """
+
         return {k: getattr(self, k) for k in self.label_stat_attr_keys}
 
     def state_dict(self) -> dict[str, dict[str, Any]]:
+        """
+        Returns the combined state dict for images and labels of the statistics across the whole dataset.
+        
+        Returns:
+            The state dict of the statistics."""
         return {"image": self.image_state_dict(), "label": self.label_state_dict()}
 
     def save_preprocessed(self, *subjects, save_path, preprocessing_trafo, num_procs) -> None:
+        """
+        Preprocesses and saves all subjects in the dataset to a json file for metadata, an image and a label file each.
+        Also saves a json file containing the state_dict of the dataset
+
+        Args:
+            subjects: The subjects to save.
+            save_path: The path to save the subjects to.
+            preprocessing_trafo: The preprocessing transform to use.
+            num_procs: The number of processes to use for multiprocessing.
+
+        """
         func = partial(
             self._wrapped_save_single_preprocessed_subject,
             save_path=save_path,
@@ -360,6 +678,17 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             )
 
     def restore_preprocessed(self, preprocessed_path) -> tuple[list[tio.data.Subject], dict[str, Any]]:
+        """
+        Restores the preprocessed subjects from a json file for metadata, an image and a label file each.
+        Also restores the state_dict of the dataset.
+        
+        Args:
+            preprocessed_path: The path to the preprocessed subjects.
+            
+        Returns:
+            The subjects and the state dict of the dataset.
+            
+        """
         with open(os.path.join(preprocessed_path, "dataset.json")) as f:
             dset_meta = json.load(f, cls=PyTorchJsonDecoder)
 
@@ -404,10 +733,23 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
     @property
     def median_spacing(self) -> torch.Tensor:
+        """
+        Computes the median spacing of the dataset.
+        
+        Returns:
+            The median spacing of the dataset.
+        """
         return torch.median(self.spacings, 0).values
 
     @property
     def computed_target_spacing(self) -> torch.Tensor:
+        """
+        Computes the target spacing of the dataset under considereation of possible anisotrophies
+        and the expected size after resampling to median spacing.
+        
+        Returns:
+            The computed target spacing of the dataset.
+        """
         target_spacing = self.median_spacing
         target_size = self.median_size_after_resampling
         # we need to identify datasets for which a different target spacing could be beneficial. These datasets have
@@ -435,28 +777,70 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
     @property
     def target_spacing(self) -> torch.Tensor:
+        """
+        Returns the externally given target spacing if provided and falls back to computing it.
+
+        Returns:
+            The target spacing for the dataset
+
+        """
         return self._target_spacing or self.computed_target_spacing
 
     @property
     def sizes_after_resampling(self) -> torch.Tensor:
+        """
+        Computes the image sizes of the dataset after resampling to the median spacing.
+        
+        Returns:
+            The image sizes after resampling
+        
+        """
         return (self.spatial_shapes.float() / self.spacings * self.median_spacing).round().long()
 
     @property
     def median_size_after_resampling(self) -> torch.Tensor:
+        """
+        Computes the median image size of the dataset after resampling to the median spacing.
+        
+        Returns:
+            The median image size after resampling
+        
+        """
         return torch.median(self.sizes_after_resampling, 0).values
 
     @property
     def target_size(self) -> torch.Tensor:
+        """
+        Returns the externally given target size if provided and 
+        falls back to computing it as the median size after resampling.
+
+        Returns:
+            The target size for the dataset
+        """
         return self._target_size or self.median_size_after_resampling
 
     @property
     def mean_intensity_value(self) -> torch.Tensor:
+        """
+        Computes the mean image intensity value of the dataset.
+
+        Returns:
+            The mean intensity value of the dataset.
+        
+        """
         return torch.tensor(
             sum(float(k) * float(v) for k, v in self.intensity_counts.items()) / sum(self.intensity_counts.values())
         )
 
     @property
     def std_intensity_value(self) -> torch.Tensor:
+        """
+        Computes the standard deviation of the image intensity values of the dataset.
+        
+        Returns:
+            The standard deviation of the image intensity values.
+            
+        """
 
         n = sum(self.intensity_counts.values())
         # normal intensity calculation without allocating all the occurences to save memory
@@ -469,15 +853,36 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         ).sqrt()
 
     @property
-    def max_size_after_resampling(self):
+    def max_size_after_resampling(self) -> torch.Tensor:
+        """
+        Computes the maximum image size of the dataset after resampling to the median spacing.
+
+        Returns:
+            The maximum image size after resampling.
+
+        """
         return torch.max(self._sizes_after_resampling, 0).values
 
     @property
-    def min_size_after_resampling(self):
-        return torch.min(self.sizes_after_resampling, 0).values
+    def min_size_after_resampling(self) -> torch.Tensor:
+        """
+        Computes the minimum image size of the dataset after resampling to the median spacing.
+
+        Returns:
+            The minimum image size after resampling.
+
+        """
+        return torch.min(self._sizes_after_resampling, 0).values
 
     @property
-    def default_preprocessing(self):
+    def default_preprocessing(self) -> Callable[[tio.data.Subject], tio.data.Subject] | tio.transforms.Transform | None:
+        """
+        Returns the default preprocessing for the dataset.
+
+        Returns:
+            The default preprocessing for the dataset.
+
+        """
         from mdlu.transforms import DefaultPreprocessing
 
         return DefaultPreprocessing(
@@ -490,7 +895,14 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         )
 
     @property
-    def default_augmentation(self):
+    def default_augmentation(self) -> Callable[[tio.data.Subject], tio.data.Subject] | tio.transforms.Transform | None:
+        """
+        Returns the default augmentation for the dataset.
+        
+        Returns:
+            The default augmentation for the dataset.
+        
+        """
         from mdlu.transforms import DefaultAugmentation
 
         return DefaultAugmentation(
@@ -500,37 +912,94 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
 
 class AbstractDiscreteLabelDataset(AbstractDataset):
+    """Abstract dataset for a task with discrete labels (like semantic segmentation or classification).
+    
+    Additionally to the image statistics it also stores the class values as label statistics and derives the following attributes:
+    
+    - :attr:`consecutive_class_mapping`: A mapping from consecutive class values to the original class values.
+    - :attr:`inverse_class_mapping`: A mapping from original class values to consecutive class values.
+    - :attr`num_classes`: The number of classes in the dataset.
+
+    For more information see :class:`AbstractDataset`.
+    """
     class_values: torch.Tensor
     label_stat_attr_keys = ("class_values", *AbstractDataset.label_stat_attr_keys)
 
     @staticmethod
-    def get_single_label_stats(label: tio.data.Image, *args, **kwargs):
+    def get_single_label_stats(label: tio.data.Image, *args: Any, **kwargs: Any) -> Dict[str, torch.Tensor | Any] | Any:
+        """
+        Computes the label statistics for a single label.
+        
+        Args:
+            label: The label to compute the statistics for.
+            
+        Returns:
+            The label statistics for the label.
+        """
         return {"class_values": label.tensor.unique().tolist()}
 
-    def aggregate_label_stats(self, *label_stats):
+    def aggregate_label_stats(self, *label_stats) -> Dict[str, torch.Tensor | Any]:
+        """
+        Aggregates the label statistics of multiple labels.
+
+        Args:
+            label_stats: The label statistics of multiple labels.
+
+        Returns:
+            The aggregated label statistics.
+
+        """
         return {
             "class_values": torch.tensor(sorted(set(chain.from_iterable(map(itemgetter("class_values"), label_stats)))))
         }
 
     @property
     def consecutive_class_mapping(self) -> dict[int, int]:
+        """
+        Returns the mapping from consecutive class values to the original class values.
+        
+        Returns:
+            The mapping from consecutive class values to the original class values.
+        
+        """
         return dict(enumerate(self.class_values.tolist()))
 
     @property
     def inverse_class_mapping(self) -> dict[int, int]:
+        """
+        Returns the mapping from original class values to consecutive class values.
+        
+        Returns:
+            The mapping from original class values to consecutive class values.
+        
+        """
         return {v: k for k, v in self.consecutive_class_mapping.items()}
 
     @property
     def num_classes(self) -> int:
+        """
+        Returns the number of classes in the dataset.
+
+        Returns:
+            The number of classes in the dataset.
+
+        """
         return self.class_values.numel()
 
     @property
-    def default_preprocessing(self):
+    def default_preprocessing(self) -> Callable[[tio.data.Subject], tio.data.Subject] | tio.transforms.Transform | None:
+        """
+        Returns the default preprocessing for the dataset.
+        
+        Returns:
+            The default preprocessing for the dataset.
+            
+        """
         from mdlu.transforms import DefaultPreprocessing
 
         return tio.transforms.Compose(
             [
-                tio.transforms.RemapLabels(self.consecutive_class_mapping),
+                tio.transforms.RemapLabels(self.inverse_class_mapping),
                 DefaultPreprocessing(
                     target_spacing=self.target_spacing.tolist(),
                     target_size=self.median_size_after_resampling.long().tolist(),
