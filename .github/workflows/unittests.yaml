@@ -1,6 +1,11 @@
 name: UnitTest
 
-on: [push, pull_request]
+on:
+  push:
+  release:
+    types:
+      - created
+  pull_request:
 jobs:
 
   cpu:
