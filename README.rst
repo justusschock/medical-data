@@ -18,7 +18,7 @@ Installation
 
 This project can be installed either from PyPI or by cloning the repository from GitHub.
 
-For an install of published packages, use the command 
+For an install of published packages, use the command
 
 .. code-block:: bash
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from tkinter import Image
 from typing import Any, Callable, Optional, Sequence, Tuple, Union
 
@@ -23,29 +24,29 @@ __all__ = [
 
 
 class DefaultSpatialPreIntensityPreprocessingTransforms(tio.transforms.Compose):
-    """
-    The default spatial preprocessing to be running BEFORE the intensity preprocessing.
-    Can optionally (by default) include a Cropping to nonzero values, a resampling to the target spacing 
-    (for masks either in one-hot format or using the nearest neighbor resampling).
+    """The default spatial preprocessing to be running BEFORE the intensity preprocessing.
 
+    Can optionally (by default) include a Cropping to nonzero values, a resampling to the target spacing (for masks
+    either in one-hot format or using the nearest neighbor resampling).
     """
+
     def __init__(
         self,
         resample_onehot: bool,
         target_spacing,
         interpolation: str = "linear",
-        crop_to_nonzero:  str | bool | None = False,
+        crop_to_nonzero: str | bool | None = False,
         num_classes: int | None = None,
     ) -> None:
         """
         Args:
-            resample_onehot: Whether to resample masks to the target spacing in onme-hot using the same 
+            resample_onehot: Whether to resample masks to the target spacing in onme-hot using the same
                 interpolation scheme as for images combined with an argmax or using the nearest neighbor approach.
             target_spacing: The target spacing to resample to.
             interpolation: The interpolation scheme to use when resampling.
             crop_to_nonzero: Whether to crop to nonzero values.
             num_classes: The number of classes to use when resampling masks.
-        
+
         """
 
         trafos = []
@@ -73,11 +74,11 @@ class DefaultSpatialPreIntensityPreprocessingTransforms(tio.transforms.Compose):
 
 
 class DefaultSpatialPostIntensityPreprocessingTransforms(tio.transforms.Compose):
-    """
-    The default spatial preprocessing to be running AFTER the intensity preprocessing.
-    
+    """The default spatial preprocessing to be running AFTER the intensity preprocessing.
+
     Currently only consists of cropping or padding to a given target size
     """
+
     def __init__(self, target_size: torch.Tensor) -> None:
         """
         Args:
@@ -89,8 +90,10 @@ class DefaultSpatialPostIntensityPreprocessingTransforms(tio.transforms.Compose)
 
 class DefaultIntensityPreprocessing(tio.transforms.Compose):
     """The default intensity preprocessing.
+
     Includes a rescaling of intensity values to certain percentiles as well as a normalization transform.
     """
+
     def __init__(
         self,
         target_size,
@@ -126,8 +129,7 @@ class DefaultIntensityPreprocessing(tio.transforms.Compose):
 
 
 class DefaultPreprocessing(tio.transforms.Compose):
-    """The default preprocessing.
-    Consists of the following tranforms (in Order):
+    """The default preprocessing. Consists of the following tranforms (in Order):
 
     - Transform all images and label images to a canonical RAS+ orientation
     - Copy Affine from image to others (like labels). There can be inaccuracies using different loaders or annotation tools
@@ -137,8 +139,8 @@ class DefaultPreprocessing(tio.transforms.Compose):
     - Rescaling of intensity values to certain percentiles
     - Normalization of intensity values
     - Cropping or padding to target size
-
     """
+
     def __init__(
         self,
         target_spacing: Sequence[float],
@@ -147,7 +149,7 @@ class DefaultPreprocessing(tio.transforms.Compose):
         dataset_intensity_mean: torch.Tensor | None = None,
         dataset_intensity_std: torch.Tensor | None = None,
         interpolation: str = "linear",
-        affine_key: str = "data",
+        affine_key: None | str = "data",
         num_classes: int | None = None,
     ):
         """
@@ -164,7 +166,12 @@ class DefaultPreprocessing(tio.transforms.Compose):
         """
         trafos = [
             tio.transforms.ToCanonical(),
-            tio.transforms.preprocessing.CopyAffine(affine_key),
+        ]
+
+        if affine_key is not None:
+            trafos.append(tio.transforms.CopyAffineFrom(affine_key=affine_key))
+
+        trafos += [
             DefaultSpatialPreIntensityPreprocessingTransforms(
                 resample_onehot=True,
                 num_classes=num_classes,
@@ -185,10 +192,11 @@ class DefaultPreprocessing(tio.transforms.Compose):
 
 class ResampleOnehot(Resample):
     """Resample a mask to the target spacing using one-hot encoding and same interpolation scheme as for images.
-    
+
     .. note::
         For additional arguments have a look at :class:`torchio.transforms.preprocessing.spatial.resample.Resample`.
     """
+
     def __init__(self, num_classes: int, *args: Any, **kwargs: Any) -> None:
         """
         Args:
@@ -206,7 +214,6 @@ class ResampleOnehot(Resample):
 
         Returns:
             The transformed subject.
-
         """
         subject = self.to_onehot_trafo(subject)
         temp_scalar_images = []
@@ -226,13 +233,14 @@ class ResampleOnehot(Resample):
 
 class ResampleAndCropOrPad(tio.transforms.Transform):
     """Resampling to a custom target spacing and cropping or padding to a custom target size.
+
     Handles each image individually since depending on initial shape and spacing the in-between results may differ.
     """
 
     def __init__(
         self,
-        target_spacing: Tuple[float, float, float],
-        target_size: Tuple[int, int, int],
+        target_spacing: tuple[float, float, float],
+        target_size: tuple[int, int, int],
         num_classes: int,
         interpolation: str = "linear",
         **kwargs,
@@ -269,10 +277,10 @@ class ResampleAndCropOrPad(tio.transforms.Transform):
 
     def apply_transform(self, subject: tio.data.Subject) -> tio.data.Subject:
         """Applies the resampling and cropping or padding to the whole subject.
-        
+
         Args:
             subject: The subject to apply the transform to.
-        
+
         Returns:
             The transformed subject.
         """
@@ -289,7 +297,8 @@ class ResampleAndCropOrPad(tio.transforms.Transform):
 
 
 class CropToNonZero(tio.transforms.Transform):
-    """Crops the image to a bounding box containing all nonzero voxels"""
+    """Crops the image to a bounding box containing all nonzero voxels."""
+
     def __init__(self, key: str | None = None, **kwargs: Any) -> None:
         """
         Args:
@@ -300,9 +309,7 @@ class CropToNonZero(tio.transforms.Transform):
 
     @staticmethod
     def crop_to_nonzero(image: tio.data.Image, *additional_images: tio.data.Image, **padding_kwargs) -> None:
-        """
-        crops tensor to non-zero and additional tensor to the same part of the
-        tensor if given.
+        """crops tensor to non-zero and additional tensor to the same part of the tensor if given.
 
         Args:
             tensor: the tensor to crop
@@ -338,7 +345,6 @@ class CropToNonZero(tio.transforms.Transform):
 
         Returns:
             The transformed subject.
-
         """
         intensity_images = subject.get_images_dict(intensity_only=True)
         all_images = subject.get_images_dict(intensity_only=False)
@@ -362,16 +368,16 @@ class CropToNonZero(tio.transforms.Transform):
 
 class NNUnetNormalization(tio.transforms.ZNormalization):
     """Normalization similar to the one prposed in the nnUNet paper.
-    
-    - If the image is not a CT and not more than 25% of the image are cropped away, 
+
+    - If the image is not a CT and not more than 25% of the image are cropped away,
         use the usual Z-Normalization across the whole image.
     - If the image is not a CT and more than 25% of the iamge are cropped away,
-        extract the mean and standard deviation of from the non-cropped parts of the image only and 
+        extract the mean and standard deviation of from the non-cropped parts of the image only and
         perform Z-Normalization using these values.
     - If the image is a CT, use the passed mean and standard deviation values computed over the whole dataset
         and use those for Z-Normalization.
-
     """
+
     def __init__(
         self,
         target_size: Sequence[int],
@@ -449,7 +455,6 @@ class LabelToCategorical(tio.transforms.preprocessing.label.label_transform.Labe
 
         Returns:
             The transformed subject.
-
         """
 
         for k, v in self.get_images_dict(subject).items():
@@ -478,15 +483,15 @@ class RescaleIntensityPercentiles(tio.transforms.RescaleIntensity):
 
 
 class DefaultSpatialAugmentation(tio.transforms.Compose):
-    """Default spatial augmentation. 
-    
+    """Default spatial augmentation.
+
     - Approximates a random anisotropy
     - Randomly flips the image
     - Applies a random affine transformation
     - Optionally includes a random elastic deformation
-
     """
-    def __init__(self, image_modality: ImageModality, include_deformation: bool = False, p: float=0.25) -> None:
+
+    def __init__(self, image_modality: ImageModality | int, include_deformation: bool = False, p: float = 0.25) -> None:
         """
         Args:
             image_modality: The image modality to use.
@@ -522,14 +527,14 @@ class DefaultIntensityAugmentation(tio.transforms.Compose):
     - Random Blurring
     - Random Noise
     - Random Swapping of Patches
-
     """
-    def __init__(self, image_modality: ImageModality, p: float=0.25) -> None:
+
+    def __init__(self, image_modality: ImageModality | int, p: float = 0.25) -> None:
         """
         Args:
             image_modality: The image modality to use.
             p: The probability of applying every single transformation.
-        
+
         """
         trafos = []
 
@@ -563,13 +568,12 @@ class DefaultAugmentation(tio.transforms.Compose):
     - Random Gamma Transform
     - Random Blurring
     - Random Noise
-    - Random Swapping of Patches    
-    
+    - Random Swapping of Patches
     """
 
     def __init__(
         self,
-        image_modality: ImageModality,
+        image_modality: ImageModality | int,
         include_deformation: bool = False,
         spatial_prob: float = 0.25,
         intensity_prob: float = 0.5,
@@ -594,20 +598,20 @@ class DefaultAugmentation(tio.transforms.Compose):
 
 class Transform3DTo2D(tio.transforms.Transform):
     """Transforms a 3D image to a 2D image with the number of channels equal to the depth beforehand."""
+
     def apply_transform(self, subject: tio.data.Subject) -> tio.data.Subject:
         """Applies the transform to the whole subject.
-        
+
         Args:
             subject: The subject to apply the transform to.
-            
+
         Returns:
             The transformed subject.
-        
         """
         for k, v in subject.get_images_dict.items():
             tensor = v.data
             orig_shape = v.data.shape
-            tensor = tensor.view(orig_shape[3]*orig_shape[0], orig_shape[1], orig_shape[2], 1)
+            tensor = tensor.view(orig_shape[3] * orig_shape[0], orig_shape[1], orig_shape[2], 1)
             v.set_data(tensor)
             subject[f"_{k}_orig_shape"] = orig_shape
         return subject
@@ -615,15 +619,15 @@ class Transform3DTo2D(tio.transforms.Transform):
 
 class Transform2DBackTo3D(tio.transforms.Transform):
     """Transforms a 2D image back to a 3D image with the original shape restored."""
+
     def apply_transform(self, subject: tio.data.Subject) -> tio.data.Subject:
         """Applies the transform to the whole subject.
-        
+
         Args:
             subject: The subject to apply the transform to.
-        
+
         Returns:
             The transformed subject.
-        
         """
         for k, v in subject.get_images_dict.items():
             tensor = v.data
@@ -636,7 +640,7 @@ class Transform2DBackTo3D(tio.transforms.Transform):
 
 def extract_nonzero_bounding_box_from_tensor(
     tensor: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Extracts the bounding box of nonzero elements from a tensor.
 
     Args:
@@ -644,7 +648,6 @@ def extract_nonzero_bounding_box_from_tensor(
 
     Returns:
         The bounding box of nonzero elements (as centers and ranges).
-
     """
 
     # create empty ranges
@@ -679,9 +682,9 @@ def crop_tensor_to_bounding_box(
     tensor: torch.Tensor,
     centers: torch.Tensor,
     ranges: torch.Tensor,
-    additional_tensor: Optional[torch.Tensor] = None,
+    additional_tensor: torch.Tensor | None = None,
     **padding_kwargs,
-) -> Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor] | torch.Tensor:
     """Crops a tensor to a bounding box.
 
     Args:
@@ -768,9 +771,9 @@ def crop_tensor_to_bounding_box(
 
 def crop_tensor_to_nonzero(
     tensor: torch.Tensor,
-    additional_tensor: Optional[torch.Tensor] = None,
+    additional_tensor: torch.Tensor | None = None,
     **padding_kwargs,
-) -> Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor] | torch.Tensor:
     """
     crops tensor to non-zero and additional tensor to the same part of the
     tensor if given
@@ -796,15 +799,16 @@ def crop_tensor_to_nonzero(
 
 
 class CropOrPadPerImage(tio.transforms.CropOrPad):
-    """Crops or pads every single image individually to the given shape"""
+    """Crops or pads every single image individually to the given shape."""
+
     def apply_transform(self, subject: tio.data.Subject) -> tio.data.Subject:
         """
         Args:
             subject: the subject to apply the transform to
-            
+
         Returns:
             the subject with the transformed data
-        
+
         """
         for k, v in subject.get_images_dict(intensity_only=False, include=self.include, exclude=self.exclude).items():
             part_sub = type(subject)({k: v})
