@@ -169,7 +169,7 @@ class DefaultPreprocessing(tio.transforms.Compose):
         ]
 
         if affine_key is not None:
-            trafos.append(tio.transforms.CopyAffineFrom(affine_key=affine_key))
+            trafos.append(tio.transforms.preprocessing.CopyAffine(target=affine_key))
 
         trafos += [
             DefaultSpatialPreIntensityPreprocessingTransforms(
@@ -539,9 +539,9 @@ class DefaultIntensityAugmentation(tio.transforms.Compose):
         trafos = []
 
         # TODO: Figure out issues with ghosting and spiking
-        # if image_modality is not None and image_modality == ImageModality.MR:
-        # trafos.append(tio.transforms.RandomGhosting(p=p))
-        # trafos.append(tio.transforms.RandomSpike(p=p))
+        if image_modality is not None and image_modality == ImageModality.MR:
+            trafos.append(tio.transforms.RandomGhosting(p=p))
+            trafos.append(tio.transforms.RandomSpike(p=p))
 
         trafos += [
             tio.transforms.RandomMotion(p=p),

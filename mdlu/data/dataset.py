@@ -221,7 +221,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         # need to do this early on as torch hacks some custom things (like __getattr__)
         torch.utils.data.Dataset.__init__(self)
         parsed_subjects = self.parse_subjects(*paths)
-        if isinstance(image_modality, str):
+        if isinstance(image_modality, str) and not isinstance(image_modality, ImageModality):
             image_modality = ImageModality.from_str(image_modality)
 
         self.image_modality = image_modality
