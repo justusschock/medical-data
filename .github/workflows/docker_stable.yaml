@@ -42,6 +42,7 @@ jobs:
         with:
           images: ${{ github.repository }}
           tags: |
+            type=pep440,pattern={{version}}-${{ matrix.accelerator }}
             type=raw,value=stable-${{ matrix.accelerator }}
 
       - name: Build
