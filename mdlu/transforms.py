@@ -538,7 +538,6 @@ class DefaultIntensityAugmentation(tio.transforms.Compose):
         """
         trafos = []
 
-        # TODO: Figure out issues with ghosting and spiking
         if image_modality is not None and image_modality == ImageModality.MR:
             trafos.append(tio.transforms.RandomGhosting(p=p))
             trafos.append(tio.transforms.RandomSpike(p=p))
