@@ -31,6 +31,7 @@ import torch
 import torchio as tio
 import tqdm
 from tqdm.contrib.concurrent import process_map
+from typing_extensions import Literal
 
 from mdlu.data.modality import ImageModality
 from mdlu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder
@@ -197,8 +198,13 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         image_modality: ImageModality | int | str,
         image_stat_key: str | None = None,
         label_stat_key: str | None = None,
-        preprocessing: (tio.transforms.Transform | Callable[[tio.data.Subject], tio.data.Subject] | None) = "default",
-        augmentation: tio.transforms.Transform | Callable[[tio.data.Subject], tio.data.Subject] | None = None,
+        preprocessing: (
+            tio.transforms.Transform | Callable[[tio.data.Subject], tio.data.Subject] | None | Literal["default"]
+        ) = "default",
+        augmentation: tio.transforms.Transform
+        | Callable[[tio.data.Subject], tio.data.Subject]
+        | None
+        | Literal["default"] = None,
         statistic_collection_nonzero: bool = False,
         num_stat_collection_procs: int = 0,
         num_save_procs: int = 0,
@@ -591,9 +597,6 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             preprocessing_trafo: The preprocessing transform to use.
             total_num_subjects: The total number of subjects.
         """
-        self.save_single_preprocessed_subject(
-            *args, save_path=save_path, preprocessing_trafo=preprocessing_trafo, total_num_subjects=total_num_subjects
-        )
         return self.save_single_preprocessed_subject(
             *args,
             save_path=save_path,
