@@ -25,7 +25,7 @@ from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader
 
 from pytorch_lightning import LightningModule
-from mdlu.utils.suppress_output import suppress_stdout
+from mdlu.utils import suppress_stdout
 
 
 def b2mb(x: float) -> float:
