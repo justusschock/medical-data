@@ -24,8 +24,8 @@ import torchio as tio
 from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader
 
-from medical_segmentation.model import LightningSegmentationNetwork
-from medical_segmentation.utils.suppress_output import suppress_stdout
+from pytorch_lightning import LightningModule
+from mdlu.utils.suppress_output import suppress_stdout
 
 
 def b2mb(x: float) -> float:
@@ -68,7 +68,7 @@ class MemoryEstimator:
 
     def __call__(
         self,
-        network: LightningSegmentationNetwork,
+        network: LightningModule,
         batch_size: int,
         image_patch_shape: np.ndarray,
         whole_image_shape: np.ndarray,
