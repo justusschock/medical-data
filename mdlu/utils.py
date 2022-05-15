@@ -11,9 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import os
+import sys
+from contextlib import contextmanager
 import json
-from typing import Any, Mapping
+from typing import Any, Mapping, Generator
 
 import torch
 from pytorch_lightning.utilities.apply_func import apply_to_collection
@@ -47,3 +49,18 @@ class PyTorchJsonDecoder(json.JSONDecoder):
         decoded = super().decode(s, *args, **kwargs)
         decoded = apply_to_collection(decoded, Mapping, self.to_tensor)
         return decoded
+
+
+# TODO: Find why this is not suppressing all PL Trainer output
+@contextmanager
+def suppress_stdout() -> Generator[None, None, None]:
+    with open(os.devnull, "w") as devnull:
+        old_stdout = sys.stdout
+        sys.stdout = devnull
+        old_std_err = sys.stderr
+        sys.stderr = devnull
+        try:
+            yield
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_std_err
