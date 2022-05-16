@@ -36,7 +36,7 @@ from tqdm.contrib.concurrent import process_map
 from mdlu.data.modality import ImageModality
 from mdlu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder
 
-ImageStats = namedtuple("ImageStats", ("spacing", "spatial_shape", "unique_intensities", "intensity_counts"))
+ImageStats = namedtuple("ImageStats", ("spacing", "spatial_shape", "unique_intensities", "intensity_counts", "num_channels"))
 
 __all__ = ["AbstractDataset", "AbstractDiscreteLabelDataset"]
 
@@ -182,6 +182,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         "spacings",
         "spatial_shapes",
         "intensity_counts",
+        "num_channels_all_images",
     )
     label_stat_attr_keys: tuple[str, ...] = ()
 
@@ -190,6 +191,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
     spacings: torch.Tensor
     spatial_shapes: torch.Tensor
     intensity_counts: Counter
+    num_channels: torch.Tensor
 
     def __init__(
         self,
@@ -346,7 +348,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         uniques, counts = image.tensor[image.tensor > image.tensor.min()].unique(return_counts=True)
         uniques, counts = uniques.tolist(), counts.tolist()
 
-        return ImageStats(image.spacing, image.spatial_shape, uniques, counts)
+        return ImageStats(image.spacing, image.spatial_shape, uniques, counts, image.tensor.size(0))
 
     @staticmethod
     def get_single_label_stats(label: Any, *args: Any, **kwargs: Any) -> Any:
@@ -376,6 +378,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         shapes = tuple(map(attrgetter("spatial_shape"), image_stats))
         unique_intensities = map(attrgetter("unique_intensities"), image_stats)
         intensity_counts = map(attrgetter("intensity_counts"), image_stats)
+        num_channels = tuple(map(attrgetter("num_channels"), image_stats))
 
         for u, c in zip(unique_intensities, intensity_counts):
             intensity_values.update(dict(zip(u, c)))
@@ -384,6 +387,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             "spacings": torch.tensor(spacings, dtype=torch.float),
             "spatial_shapes": torch.tensor(shapes, dtype=torch.long),
             "intensity_counts": intensity_values,
+            "num_channels_all_images": torch.tensor(num_channels, dtype=torch.long)
         }
 
     @staticmethod
@@ -769,6 +773,15 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             The target spacing for the dataset
         """
         return self._target_spacing or self.computed_target_spacing
+
+    @property
+    def num_channels(self) -> int:
+        if self.num_channels_all_images.unique(return_counts=False) == 1:
+            return self.num_channels_all_images[0].item()
+        raise RuntimeError(
+            f"""All images need to have the same number of channels, 
+            but got images with the following numbers of channels: {self.num_channels_all_images}"""
+        )
 
     @property
     def sizes_after_resampling(self) -> torch.Tensor:
