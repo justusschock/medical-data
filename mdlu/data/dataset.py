@@ -26,6 +26,7 @@ from itertools import chain
 from operator import attrgetter, itemgetter
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from numbers import Number
 
 import torch
 import torchio as tio
@@ -890,10 +891,10 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
     """
 
     class_values: torch.Tensor
-    label_stat_attr_keys = ("class_values", *AbstractDataset.label_stat_attr_keys)
+    label_stat_attr_keys = ("class_values", "spatial_label_shapes", *AbstractDataset.label_stat_attr_keys)
 
     @staticmethod
-    def get_single_label_stats(label: tio.data.Image, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor | Any] | Any:
+    def get_single_label_stats(label: tio.data.Image | torch.Tensor | Number, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor | Any] | Any:
         """Computes the label statistics for a single label.
 
         Args:
@@ -902,7 +903,15 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
         Returns:
             The label statistics for the label.
         """
-        return {"class_values": label.tensor.unique().tolist()}
+        if isinstance(label, tio.data.Image):
+            label_tensor = label.tensor
+        elif isinstance(label, torch.Tensor):
+            label_tensor = label
+        elif isinstance(label, Number):
+            label_tensor = torch.tensor(label).view(1,)
+        else:
+            raise TypeError(f'label has to be either torchio Image, torch.Tensor or Number, got {type(label)}.')
+        return {"class_values": label_tensor.unique().tolist(), 'spatial_shape': label_tensor.shape[1:]}
 
     @staticmethod
     def aggregate_label_stats(*label_stats: Any) -> dict[str, torch.Tensor | Any] | None:
@@ -915,8 +924,19 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
             The aggregated label statistics.
         """
         return {
-            "class_values": torch.tensor(sorted(set(chain.from_iterable(map(itemgetter("class_values"), label_stats)))))
+            "class_values": torch.tensor(sorted(set(chain.from_iterable(map(itemgetter("class_values"), label_stats))))),
+            "spatial_label_shapes": torch.tensor(tuple(map(attrgetter("spatial_shape"), image_stats)), dtype=torch.long)
         }
+
+    @property
+    def target_label_size(self) -> torch.Tensor:
+        if torch.allclose(self.spatial_label_shapes, self.spatial_shapes):
+            return self.target_size
+        
+        median = spatial_shapes.median(0)
+        if torch.isnan(median).any():
+            return torch.tensor([1])
+        return median
 
     @property
     def consecutive_class_mapping(self) -> dict[int, int]:
