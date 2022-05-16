@@ -71,6 +71,7 @@ class MemoryEstimator:
         network: LightningModule,
         batch_size: int,
         image_patch_shape: np.ndarray,
+        output_shape: np.ndarray,
         whole_image_shape: np.ndarray,
         in_channels: int,
     ) -> tuple[int, bool]:
@@ -97,7 +98,7 @@ class MemoryEstimator:
                         },
                         "label": {
                             tio.constants.DATA: torch.zeros(
-                                tuple(image_patch_shape.tolist()),
+                                tuple(output_shape.tolist()),
                                 dtype=torch.long,
                             ),
                         },
@@ -115,7 +116,7 @@ class MemoryEstimator:
                         },
                         "label": {
                             tio.constants.DATA: torch.zeros(
-                                tuple(whole_image_shape.tolist()),
+                                tuple(output_shape.tolist()),
                                 dtype=torch.long,
                             ),
                         },
