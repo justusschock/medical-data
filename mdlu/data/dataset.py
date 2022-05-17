@@ -946,7 +946,10 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
         if torch.allclose(self.spatial_label_shapes, self.spatial_shapes):
             return self.target_size
         
-        median = spatial_shapes.median(0)
+        if self.spatial_label_shape.numel() == 0:
+            return torch.tensor([1])
+        
+        median = self.spatial_label_shapes.median(0)
         if torch.isnan(median).any():
             return torch.tensor([1])
         return median
