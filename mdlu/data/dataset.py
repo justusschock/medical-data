@@ -772,7 +772,9 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         Returns:
             The target spacing for the dataset
         """
-        return self._target_spacing or self.computed_target_spacing
+        if self._target_spacing is None:
+            return self.computed_target_spacing
+        return self._target_spacing
 
     @property
     def num_channels(self) -> int:
@@ -809,7 +811,9 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         Returns:
             The target size for the dataset
         """
-        return self._target_size or self.median_size_after_resampling
+        if self._target_size is None:
+            return self.median_size_after_resampling
+        return self._target_size
 
     @property
     def mean_intensity_value(self) -> torch.Tensor:
