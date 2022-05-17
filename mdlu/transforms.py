@@ -427,7 +427,7 @@ class NNUnetNormalization(tio.transforms.ZNormalization):
         # no image modality is given, use default (non-CT) behavior
         if self.image_modality is None or self.image_modality != ImageModality.CT:
             # not more than 25% of the voxels are cropped away
-            if torch.tensor(subject.spatial_shape).prod() * 0.75 < self.num_target_elems or subject[image_name].tensor[mask].std() != 0:
+            if torch.tensor(subject.spatial_shape).prod() * 0.75 < self.num_target_elems and subject[image_name].tensor[mask].std() != 0:
                 return super().apply_normalization(subject, image_name, mask)
 
             cropped_tensor = self.crop_or_pad_trafo(
