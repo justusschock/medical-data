@@ -938,7 +938,7 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
         """
         return {
             "class_values": torch.tensor(sorted(set(chain.from_iterable(map(itemgetter("class_values"), label_stats))))),
-            "spatial_label_shapes": torch.tensor(tuple(map(attrgetter("spatial_shape"), image_stats)), dtype=torch.long)
+            "spatial_label_shapes": torch.tensor(sorted(set(chain.from_iterable(map(itemgetter("spatial_shape"), label_stats)))), dtype=torch.long)
         }
 
     @property
