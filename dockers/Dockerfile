@@ -1,7 +1,7 @@
 # supported are cuda and cpu
 ARG HARDWARE=cuda
 
-FROM nvcr.io/nvidia/pytorch:22.04-py3 as base_cuda
+FROM nvcr.io/nvidia/pytorch:21.12-py3 as base_cuda
 ARG PYPI_OPTIONS=""
 
 ARG PYPI_OPTIONS=""
