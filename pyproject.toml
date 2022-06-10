@@ -22,7 +22,7 @@ dependencies = [
     "psutil <= 5.9.1",
     "torchio > 0.18.56, <=0.18.78",
     "pytorch-lightning >=1.5, <=1.6.4",
-    "monai >=0.7,<=0.8.1"
+    "monai >=0.7, <=0.8.1"
 ]
 
 [project.optional-dependencies]
