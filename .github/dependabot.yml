@@ -6,9 +6,8 @@ updates:
   # Enable version updates for python
   - package-ecosystem: "pip"
     directory: "/"
-    # Check for updates once a week
     schedule:
-      interval: "weekly"
+      interval: "daily"
     # Labels on pull requests for version updates only
     pull-request-branch-name:
       # Separate sections of the branch name with a hyphen
