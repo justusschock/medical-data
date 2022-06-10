@@ -1,9 +1,66 @@
+[project]
+dynamic = ["version"]
+name = "medical_dl_utils"
+description = "Helpful utilities for deep learning in medical image analysis/medical image computing"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {file = "LICENSE"}
+keywords = ["deep learning", "machine learning", "pytorch", "medical", "healthcare", "AI"]
+authors = [
+  {email = "justus.schock@posteo.de"},
+  {name = "Justus Schock"}
+]
+maintainers = [
+  {name = "Justus Schock", email = "justus.schock@posteo.de"}
+]
+classifiers = [
+  "Programming Language :: Python :: 3"
+]
+
+dependencies = [
+    "torch >= 1.9,<=1.10",
+    "psutil <= 5.9.1",
+    "torchio > 0.18.56,<=0.18.78",
+    "pytorch-lightning >=1.5,<=1.6.4",
+    "monai >=0.7,<=0.8.1"
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+  "coverage"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/justusschock/medical-dl-utils"
+"Repository" = "https://github.com/justusschock/medical-dl-utils"
+"Bug Reports" = "https://github.com/pypa/sampleproject/issues"
+
+# [project.scripts]
+# spam-cli = "spam:main_cli"
+
+# [project.gui-scripts]
+# spam-gui = "spam:main_gui"
+
+# [project.entry-points."spam.magical"]
+# tomatoes = "spam:main_tomatoes"
+
 [build-system]
 requires = [
-    "setuptools>=42",
+    "setuptools>=62",
     "wheel",
 ]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+zip-safe = true
+
+[tool.setuptools.packages.find]
+exclude = ["tests"]
+namespaces = true
+
+[tool.setuptools.dynamic]
+version = {attr = "mdlu.__version__"}
 
 [tool.isort]
 profile = "black"
@@ -14,6 +71,9 @@ order_by_type = "False"
 [tool.black]
 line-length = 120
 target_version = ["py37", "py38", "py39"]
+
+[tool.distutils.bdist_wheel]
+universal = true
 
 [bdist_wheel]
 universal = 1
