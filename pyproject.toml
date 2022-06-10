@@ -36,15 +36,6 @@ test = [
 "Repository" = "https://github.com/justusschock/medical-dl-utils"
 "Bug Reports" = "https://github.com/pypa/sampleproject/issues"
 
-# [project.scripts]
-# spam-cli = "spam:main_cli"
-
-# [project.gui-scripts]
-# spam-gui = "spam:main_gui"
-
-# [project.entry-points."spam.magical"]
-# tomatoes = "spam:main_tomatoes"
-
 [build-system]
 requires = [
     "setuptools>=62",
