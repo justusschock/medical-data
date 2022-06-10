@@ -21,10 +21,9 @@ from typing import Generator
 import numpy as np
 import torch
 import torchio as tio
-from pytorch_lightning import Trainer
+from pytorch_lightning import LightningModule, Trainer
 from torch.utils.data import DataLoader
 
-from pytorch_lightning import LightningModule
 from mdlu.utils import suppress_stdout
 
 
@@ -37,9 +36,7 @@ def mb2b(x: float) -> float:
 
 
 class MemoryEstimator:
-    def __init__(
-        self, device_id: int = 0, mixed_precision: bool = False, offset: int = 1  # 1mb
-    ) -> None:
+    def __init__(self, device_id: int = 0, mixed_precision: bool = False, offset: int = 1) -> None:  # 1mb
 
         self.device_id = device_id
         self.device_props = torch.cuda.get_device_properties(device_id)
@@ -56,9 +53,7 @@ class MemoryEstimator:
 
     def create_offset_tensor_on_gpu(self) -> torch.Tensor:
         device = torch.device(f"cuda:{self.device_id}")
-        tensor_mem = torch.rand(
-            1, dtype=float, requires_grad=False, device=device
-        ).element_size()
+        tensor_mem = torch.rand(1, dtype=float, requires_grad=False, device=device).element_size()
         return torch.rand(
             math.ceil(self.offset / tensor_mem),
             dtype=float,
@@ -123,9 +118,7 @@ class MemoryEstimator:
                     }
                     for i in range(10)
                 ]
-                loader_train = DataLoader(
-                    dset_train, batch_size=batch_size, shuffle=False
-                )
+                loader_train = DataLoader(dset_train, batch_size=batch_size, shuffle=False)
                 loader_val = DataLoader(dset_val, batch_size=1, shuffle=False)
 
                 with suppress_stdout():

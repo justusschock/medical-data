@@ -56,10 +56,7 @@ class MovingAverage(Metric):
                 self.current_average = value.detach()
 
             else:
-                self.current_average = (
-                    self.momentum * self.current_average
-                    + (1 - self.momentum) * value.detach()
-                )
+                self.current_average = self.momentum * self.current_average + (1 - self.momentum) * value.detach()
         else:
             self.sliding_window.append(value.detach())
             if self.sliding_window_size is None:

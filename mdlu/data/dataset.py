@@ -23,10 +23,10 @@ from collections import Counter, namedtuple
 from copy import deepcopy
 from functools import partial
 from itertools import chain
+from numbers import Number
 from operator import attrgetter, itemgetter
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
-from numbers import Number
+from typing import Any, Callable, Sequence
 
 import torch
 import torchio as tio
@@ -36,7 +36,9 @@ from tqdm.contrib.concurrent import process_map
 from mdlu.data.modality import ImageModality
 from mdlu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder
 
-ImageStats = namedtuple("ImageStats", ("spacing", "spatial_shape", "unique_intensities", "intensity_counts", "num_channels"))
+ImageStats = namedtuple(
+    "ImageStats", ("spacing", "spatial_shape", "unique_intensities", "intensity_counts", "num_channels")
+)
 
 __all__ = ["AbstractDataset", "AbstractDiscreteLabelDataset"]
 
@@ -191,7 +193,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
     spacings: torch.Tensor
     spatial_shapes: torch.Tensor
     intensity_counts: Counter
-    num_channels: torch.Tensor
+    num_channels_all_images: torch.Tensor
 
     def __init__(
         self,
@@ -259,7 +261,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         if preprocessed_path is not None and os.path.exists(preprocessed_path):
             try:
                 preprocessed_parsed_subjects, dataset_stats = self.restore_preprocessed(preprocessed_path)
-            except Exception as e:
+            except Exception:
                 # raise Warning for exception
                 preprocessed_parsed_subjects, dataset_stats = (), None
 
@@ -316,7 +318,6 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         Returns:
             A sequence of subjects (ideally not yet loaded).
         """
-        pass
 
     def set_image_stat_attributes(self, image_stats: dict[str, torch.Tensor | Counter]):
         """Sets the image statistics attributes.
@@ -360,7 +361,6 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         Returns:
             The label statistics (None per default)
         """
-        pass
 
     @staticmethod
     def aggregate_image_stats(*image_stats: Any | ImageStats) -> dict[str, Any | torch.Tensor]:
@@ -387,7 +387,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             "spacings": torch.tensor(spacings, dtype=torch.float),
             "spatial_shapes": torch.tensor(shapes, dtype=torch.long),
             "intensity_counts": intensity_values,
-            "num_channels_all_images": torch.tensor(num_channels, dtype=torch.long)
+            "num_channels_all_images": torch.tensor(num_channels, dtype=torch.long),
         }
 
     @staticmethod
@@ -400,7 +400,6 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         Returns:
             Dictionary with aggregated label statistics.
         """
-        pass
 
     def collect_stats_single_subject(
         self,
@@ -781,7 +780,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         if self.num_channels_all_images.unique(return_counts=False) == 1:
             return self.num_channels_all_images[0].item()
         raise RuntimeError(
-            f"""All images need to have the same number of channels, 
+            f"""All images need to have the same number of channels,
             but got images with the following numbers of channels: {self.num_channels_all_images}"""
         )
 
@@ -839,7 +838,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         return (
             (
                 sum(float(k) * float(v) ** 2 for k, v in self.intensity_counts.items())
-                - n * self.mean_intensity_value ** 2
+                - n * self.mean_intensity_value**2
             )
             / (n - 1)
         ).sqrt()
@@ -911,7 +910,9 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
     label_stat_attr_keys = ("class_values", "spatial_label_shapes", *AbstractDataset.label_stat_attr_keys)
 
     @staticmethod
-    def get_single_label_stats(label: tio.data.Image | torch.Tensor | Number, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor | Any] | Any:
+    def get_single_label_stats(
+        label: tio.data.Image | torch.Tensor | Number, *args: Any, **kwargs: Any
+    ) -> dict[str, torch.Tensor | Any] | Any:
         """Computes the label statistics for a single label.
 
         Args:
@@ -925,10 +926,12 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
         elif isinstance(label, torch.Tensor):
             label_tensor = label
         elif isinstance(label, Number):
-            label_tensor = torch.tensor(label).view(1,)
+            label_tensor = torch.tensor(label).view(
+                1,
+            )
         else:
-            raise TypeError(f'label has to be either torchio Image, torch.Tensor or Number, got {type(label)}.')
-        return {"class_values": label_tensor.unique().tolist(), 'spatial_shape': label_tensor.shape[1:]}
+            raise TypeError(f"label has to be either torchio Image, torch.Tensor or Number, got {type(label)}.")
+        return {"class_values": label_tensor.unique().tolist(), "spatial_shape": label_tensor.shape[1:]}
 
     @staticmethod
     def aggregate_label_stats(*label_stats: Any) -> dict[str, torch.Tensor | Any] | None:
@@ -941,18 +944,22 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
             The aggregated label statistics.
         """
         return {
-            "class_values": torch.tensor(sorted(set(chain.from_iterable(map(itemgetter("class_values"), label_stats))))),
-            "spatial_label_shapes": torch.tensor(sorted(set(chain.from_iterable(map(itemgetter("spatial_shape"), label_stats)))), dtype=torch.long)
+            "class_values": torch.tensor(
+                sorted(set(chain.from_iterable(map(itemgetter("class_values"), label_stats))))
+            ),
+            "spatial_label_shapes": torch.tensor(
+                sorted(set(chain.from_iterable(map(itemgetter("spatial_shape"), label_stats)))), dtype=torch.long
+            ),
         }
 
     @property
     def target_label_size(self) -> torch.Tensor:
         if torch.allclose(self.spatial_label_shapes, self.spatial_shapes):
             return self.target_size
-        
+
         if self.spatial_label_shape.numel() == 0:
             return torch.tensor([1])
-        
+
         median = self.spatial_label_shapes.median(0)
         if torch.isnan(median).any():
             return torch.tensor([1])
