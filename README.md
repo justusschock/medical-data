@@ -14,7 +14,6 @@ Pull requests for other common utilities are highly welcomed.
 
 ## Installation
 
-
 This project can be installed either from PyPI or by cloning the repository from GitHub.
 
 For an install of published packages, use the command
@@ -25,16 +24,15 @@ For an install of published packages, use the command
 
 ```
 
-
 To install from the (cloned) repository, use the command
 
 ```bash
 
     pip install PATH/TO/medical-dl-utils
-    
+
 ```
 
-You can also add ``-e`` to the command to make an editable install in case you want to modify the code.
+You can also add `-e` to the command to make an editable install in case you want to modify the code.
 
 You can also install the package directly from GitHub by running
 
@@ -44,8 +42,7 @@ You can also install the package directly from GitHub by running
 
 ```
 
-Docker Images
--------------
+## Docker Images
 
 We provide a docker image for easy usage of the package and as a base image for other projects.
 
