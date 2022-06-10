@@ -34,7 +34,7 @@ test = [
 [project.urls]
 "Homepage" = "https://github.com/justusschock/medical-dl-utils"
 "Repository" = "https://github.com/justusschock/medical-dl-utils"
-"Bug Reports" = "https://github.com/pypa/sampleproject/issues"
+"Bug Reports" = "https://github.com/justusschock/medical-dl-utils/issues"
 
 [build-system]
 requires = [
