@@ -8,7 +8,7 @@ license = {file = "LICENSE"}
 keywords = ["deep learning", "machine learning", "pytorch", "medical", "healthcare", "AI"]
 authors = [
   {email = "justus.schock@posteo.de"},
-  {name = Justus Schock"}
+  {name = "Justus Schock"}
 ]
 maintainers = [
   {name = "Justus Schock", email = "justus.schock@posteo.de"}
