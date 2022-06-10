@@ -193,7 +193,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
     spacings: torch.Tensor
     spatial_shapes: torch.Tensor
     intensity_counts: Counter
-    num_channels: torch.Tensor
+    num_channels_all_images: torch.Tensor
 
     def __init__(
         self,
