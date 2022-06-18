@@ -437,7 +437,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             The image statistics and the label statistics.
         """
 
-        specific_logger.debug(f"Collecting statistics for subject {subject}")
+        specific_logger.trace(f"Collecting statistics for subject {subject}")
         # do all the copying here to avoid loading the acutal subject.
         # loading a copy is fine as this will be garbage collected at the end of the function
         # loading the original subject which is also referenced somewhere else would lead to a memory leak
@@ -574,7 +574,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             preprocessing_trafo: The preprocessing transform to use.
             total_num_subjects: The total number of subjects.
         """
-        specific_logger.debug(f"Saving subject {idx}/{total_num_subjects}")
+        specific_logger.trace(f"Saving subject {idx}/{total_num_subjects}")
         # do all the copying here to avoid loading the acutal subject.
         # loading a copy is fine as this will be garbage collected at the end of the function
         # loading the original subject which is also referenced somewhere else would lead to a memory leak
@@ -615,9 +615,6 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             preprocessing_trafo: The preprocessing transform to use.
             total_num_subjects: The total number of subjects.
         """
-        self.save_single_preprocessed_subject(
-            *args, save_path=save_path, preprocessing_trafo=preprocessing_trafo, total_num_subjects=total_num_subjects
-        )
         return self.save_single_preprocessed_subject(
             *args,
             save_path=save_path,
@@ -718,7 +715,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         )
 
         for sub in subs:
-            specific_logger.debug(f"Loading subject {sub}")
+            specific_logger.trace(f"Loading subject {sub}")
 
             # load information about subject
             with open(os.path.join(sub, "subject.json")) as f:
