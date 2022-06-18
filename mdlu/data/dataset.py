@@ -34,7 +34,6 @@ import tqdm
 from loguru import logger
 from tqdm.contrib.concurrent import process_map
 
-from mdlu import __version__ as mdlu_version
 from mdlu.data.modality import ImageModality
 from mdlu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder, tqdm_logging_helper
 
@@ -270,7 +269,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         if preprocessed_path is not None and os.path.exists(preprocessed_path):
             try:
                 preprocessed_parsed_subjects, dataset_stats = self.restore_preprocessed(preprocessed_path)
-            except Exception:
+            except BaseException as e:
                 # raise Warning for exception
                 specific_logger.debug(f"Could not restore preprocessed dataset due to exception {str(e)}")
                 preprocessed_parsed_subjects, dataset_stats = (), None
@@ -645,12 +644,13 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
         return {k: getattr(self, k) for k in self.label_stat_attr_keys}
 
-    def state_dict(self) -> dict[str, dict[str, Any]]:
+    def state_dict(self) -> dict[str, dict[str, Any] | str]:
         """Returns the combined state dict for images and labels of the statistics across the whole dataset.
 
         Returns:
             The state dict of the statistics.
         """
+        from mdlu import __version__ as mdlu_version
         return {"image": self.image_state_dict(), "label": self.label_state_dict(), "version": mdlu_version}
 
     def save_preprocessed(self, *subjects, save_path, preprocessing_trafo, num_procs) -> None:
