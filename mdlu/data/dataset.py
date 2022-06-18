@@ -649,6 +649,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             The state dict of the statistics.
         """
         from mdlu import __version__ as mdlu_version
+
         return {"image": self.image_state_dict(), "label": self.label_state_dict(), "version": mdlu_version}
 
     def save_preprocessed(self, *subjects, save_path, preprocessing_trafo, num_procs) -> None:
