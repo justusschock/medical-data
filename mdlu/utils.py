@@ -66,5 +66,6 @@ def suppress_stdout() -> Generator[None, None, None]:
             sys.stdout = old_stdout
             sys.stderr = old_std_err
 
+
 def tqdm_logging_helper(msg: str) -> None:
     tqdm.write(msg, end="")
