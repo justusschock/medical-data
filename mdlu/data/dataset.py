@@ -980,7 +980,7 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
         if self.spatial_shapes.ndim == self.spatial_label_shapes.ndim and self.spatial_shapes.shape == self.spatial_label_shapes.shape and torch.allclose(self.spatial_label_shapes.to(self.spatial_shapes), self.spatial_shapes):
             return self.target_size
 
-        if self.spatial_label_shape.numel() == 0:
+        if self.spatial_label_shapes.numel() == 0:
             return torch.tensor([1])
 
         median = self.spatial_label_shapes.median(0)
