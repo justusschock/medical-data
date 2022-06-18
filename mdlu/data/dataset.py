@@ -277,18 +277,16 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
             # Incorrect Saving/Loading -> Trigger warning
             if len(preprocessed_parsed_subjects) == len(parsed_subjects):
-                specific_logger.debug(
-                    f"Using preprocessed subjects from {preprocessed_path}"
-                    
-                )
+                specific_logger.debug(f"Using preprocessed subjects from {preprocessed_path}")
             else:
-                specific_logger.debug(f"Number of preprocessed subjects does not match total number of subjects. Restarting preprocessing", )
+                specific_logger.debug(
+                    f"Number of preprocessed subjects does not match total number of subjects. Restarting preprocessing",
+                )
                 preprocessed_parsed_subjects, dataset_stats = None, None
         else:
             specific_logger.debug(f"No preprocessed dataset found at {preprocessed_path}")
             preprocessed_parsed_subjects, dataset_stats = None, None
 
-             
         if dataset_stats is None:
             specific_logger.debug("Collecting Dataset Statistics")
             dataset_stats = self.collect_dataset_stats(
