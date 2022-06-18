@@ -31,10 +31,12 @@ from typing import Any, Callable, Sequence
 import torch
 import torchio as tio
 import tqdm
+from loguru import logger
 from tqdm.contrib.concurrent import process_map
 
+from mdlu import __version__ as mdlu_version
 from mdlu.data.modality import ImageModality
-from mdlu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder
+from mdlu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder, tqdm_logging_helper
 
 ImageStats = namedtuple(
     "ImageStats", ("spacing", "spatial_shape", "unique_intensities", "intensity_counts", "num_channels")
@@ -42,6 +44,10 @@ ImageStats = namedtuple(
 
 __all__ = ["AbstractDataset", "AbstractDiscreteLabelDataset"]
 
+
+specific_logger = logger.bind(name="dataset")
+specific_logger.remove()
+specific_logger.add(tqdm_logging_helper, colorize=True)
 
 # TODO: Add possibility to also add intensity mean and std manually
 class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
@@ -239,7 +245,10 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         """
         # need to do this early on as torch hacks some custom things (like __getattr__)
         torch.utils.data.Dataset.__init__(self)
+
+        specific_logger.debug("Parsing for subjects")
         parsed_subjects = self.parse_subjects(*paths)
+        specific_logger.debug(f"Found {len(parsed_subjects)} subjects")
         if isinstance(image_modality, str) and not isinstance(image_modality, ImageModality):
             image_modality = ImageModality.from_str(image_modality)
 
@@ -263,15 +272,25 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
                 preprocessed_parsed_subjects, dataset_stats = self.restore_preprocessed(preprocessed_path)
             except Exception:
                 # raise Warning for exception
+                specific_logger.debug(f"Could not restore preprocessed dataset due to exception {str(e)}")
                 preprocessed_parsed_subjects, dataset_stats = (), None
 
             # Incorrect Saving/Loading -> Trigger warning
-            if len(preprocessed_parsed_subjects) != len(parsed_subjects):
+            if len(preprocessed_parsed_subjects) == len(parsed_subjects):
+                specific_logger.debug(
+                    f"Using preprocessed subjects from {preprocessed_path}"
+                    
+                )
+            else:
+                specific_logger.debug(f"Number of preprocessed subjects does not match total number of subjects. Restarting preprocessing", )
                 preprocessed_parsed_subjects, dataset_stats = None, None
         else:
+            specific_logger.debug(f"No preprocessed dataset found at {preprocessed_path}")
             preprocessed_parsed_subjects, dataset_stats = None, None
 
+             
         if dataset_stats is None:
+            specific_logger.debug("Collecting Dataset Statistics")
             dataset_stats = self.collect_dataset_stats(
                 *parsed_subjects,
                 image_stat_key=image_stat_key,
@@ -279,6 +298,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
                 crop_to_nonzero=statistic_collection_nonzero,
                 num_procs=num_stat_collection_procs,
             )
+            specific_logger.debug("Statistics collection finished")
 
         self.set_image_stat_attributes(dataset_stats["image"])
         self.set_label_stat_attributes(dataset_stats["label"])
@@ -287,6 +307,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
         preprocessing_trafo = self.get_preprocessing_transforms(preprocessing)
         if preprocessed_parsed_subjects is None and preprocessed_path is not None:
+            specific_logger.debug("Preprocessing and saving subjects")
             self.save_preprocessed(
                 *parsed_subjects,
                 save_path=preprocessed_path,
@@ -419,6 +440,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             The image statistics and the label statistics.
         """
 
+        specific_logger.debug(f"Collecting statistics for subject {subject}")
         # do all the copying here to avoid loading the acutal subject.
         # loading a copy is fine as this will be garbage collected at the end of the function
         # loading the original subject which is also referenced somewhere else would lead to a memory leak
@@ -555,6 +577,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             preprocessing_trafo: The preprocessing transform to use.
             total_num_subjects: The total number of subjects.
         """
+        specific_logger.debug(f"Saving subject {idx}/{total_num_subjects}")
         # do all the copying here to avoid loading the acutal subject.
         # loading a copy is fine as this will be garbage collected at the end of the function
         # loading the original subject which is also referenced somewhere else would lead to a memory leak
@@ -628,7 +651,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         Returns:
             The state dict of the statistics.
         """
-        return {"image": self.image_state_dict(), "label": self.label_state_dict()}
+        return {"image": self.image_state_dict(), "label": self.label_state_dict(), "version": mdlu_version}
 
     def save_preprocessed(self, *subjects, save_path, preprocessing_trafo, num_procs) -> None:
         """Preprocesses and saves all subjects in the dataset to a json file for metadata, an image and a label
@@ -661,6 +684,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
         stat_dict = self.state_dict()
 
+        specific_logger.debug("Saving Dataset Metadata")
         with open(os.path.join(save_path, "dataset.json"), "w") as f:
             json.dump(
                 stat_dict,
@@ -680,6 +704,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         Returns:
             The subjects and the state dict of the dataset.
         """
+        specific_logger.debug("Restoring Dataset Metadata")
         with open(os.path.join(preprocessed_path, "dataset.json")) as f:
             dset_meta = json.load(f, cls=PyTorchJsonDecoder)
 
@@ -694,6 +719,8 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         )
 
         for sub in subs:
+            specific_logger.debug(f"Loading subject {sub}")
+
             # load information about subject
             with open(os.path.join(sub, "subject.json")) as f:
                 subject_meta = json.load(f, cls=PyTorchJsonDecoder)
