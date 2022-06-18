@@ -19,6 +19,7 @@ from typing import Any, Generator, Mapping
 
 import torch
 from pytorch_lightning.utilities.apply_func import apply_to_collection
+from tqdm import tqdm
 
 __all__ = [
     "PyTorchJsonEncoder",
@@ -64,3 +65,7 @@ def suppress_stdout() -> Generator[None, None, None]:
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_std_err
+
+
+def tqdm_logging_helper(msg: str) -> None:
+    tqdm.write(msg, end="")
