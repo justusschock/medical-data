@@ -977,7 +977,11 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
 
     @property
     def target_label_size(self) -> torch.Tensor:
-        if self.spatial_shapes.ndim == self.spatial_label_shapes.ndim and self.spatial_shapes.shape == self.spatial_label_shapes.shape and torch.allclose(self.spatial_label_shapes.to(self.spatial_shapes), self.spatial_shapes):
+        if (
+            self.spatial_shapes.ndim == self.spatial_label_shapes.ndim
+            and self.spatial_shapes.shape == self.spatial_label_shapes.shape
+            and torch.allclose(self.spatial_label_shapes.to(self.spatial_shapes), self.spatial_shapes)
+        ):
             return self.target_size
 
         if self.spatial_label_shapes.numel() == 0:
