@@ -79,6 +79,8 @@ def process_whole_dir_tree(
             with open(temp_store_file, "w") as f:
                 json.dump(leaf_dirs, f)
 
+    breakpoint()
+
     func = partial(query_relevant_information_single_dir, query_keys=query_keys)
 
     if num_workers > 0:
