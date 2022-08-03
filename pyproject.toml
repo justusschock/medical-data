@@ -24,6 +24,8 @@ dependencies = [
     "pytorch-lightning >=1.5, < 1.6.5",
     "monai >=0.7, < 0.8.2",
     "loguru == 0.6.0",
+    "pydicom",
+    "jsonargparse",
 ]
 
 [project.optional-dependencies]
@@ -32,10 +34,15 @@ test = [
   "coverage"
 ]
 
+
 [project.urls]
 "Homepage" = "https://github.com/justusschock/medical-dl-utils"
 "Repository" = "https://github.com/justusschock/medical-dl-utils"
 "Bug Reports" = "https://github.com/justusschock/medical-dl-utils/issues"
+
+[options.entry_points]
+ console_scripts =
+     mdlu-data-index = mdlu.data.indexing:main
 
 [build-system]
 requires = [
