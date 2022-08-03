@@ -78,8 +78,8 @@ def process_whole_dir_tree(
                 json.dump(leaf_dirs, f)
 
     meta_data = process_map(
-        leaf_dirs,
         partial(query_relevant_information_single_dir, query_keys=query_keys),
+        leaf_dirs,
         max_workers=num_workers,
         desc="Retrieve MetaData from dirs",
     )
