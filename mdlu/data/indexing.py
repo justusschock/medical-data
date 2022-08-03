@@ -102,7 +102,7 @@ def recursive_query_information(
     )
     message_files = "\n\t- ".join(could_not_process)
 
-    logger.warn("Could not process the following directories (they don't contain dicom files):\n\t" + message_files)
+    logger.info("Could not process the following directories (they don't contain dicom files):\n\t" + message_files)
 
     with open(output_path, "w") as f:
         if output_path.endswith(".yaml") or output_path.endswith(".yml"):
