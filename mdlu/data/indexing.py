@@ -1,15 +1,17 @@
-from pydicom import dcmread
-import os
-from loguru import logger
-import tempfile
-import yaml
 import json
-from tqdm.contrib.concurrent import process_map
+import os
+import tempfile
+from functools import partial
+
+import yaml
 from jsonargparse import CLI
+from loguru import logger
+from pydicom import dcmread
+from tqdm.contrib.concurrent import process_map
 
 
 def items_in_dir(directory: str):
-    subdirs, files = []
+    subdirs, files = [], []
     for x in os.listdir(directory):
         full_x = os.path.join(directory, x)
         if os.path.isdir(full_x):
@@ -19,6 +21,7 @@ def items_in_dir(directory: str):
         else:
             raise RuntimeError(f"{full_x} is neither a file nor a directory!")
     return sorted(subdirs), sorted(files)
+
 
 def find_leaf_dirs(directory):
     logger.debug(f"Find leafdirs in {directory}")
@@ -36,6 +39,7 @@ def find_leaf_dirs(directory):
     logger.debug(f"Sort {len(leaf_dirs)} leafdirs")
     return sorted(leaf_dirs)
 
+
 def query_relevant_information_single_dir(leaf_dir: str, query_keys: list):
     meta_data = {}
     for f in items_in_dir(leaf_dir)[0]:
@@ -49,14 +53,20 @@ def query_relevant_information_single_dir(leaf_dir: str, query_keys: list):
 
     return meta_data
 
-def process_whole_dir_tree(root_dir: str, query_keys: list, store_temp_leafdirs: bool = True, num_workers: int = 10,):
+
+def process_whole_dir_tree(
+    root_dir: str,
+    query_keys: list,
+    store_temp_leafdirs: bool = True,
+    num_workers: int = 10,
+):
     leaf_dirs = None
     if store_temp_leafdirs:
         temp_path = tempfile.gettempdir()
         temp_store_file = os.path.join(temp_path, "leafdirs_" + os.path.split(root_dir)[1] + ".json")
 
         if os.path.isfile(temp_store_file):
-            with open(temp_store_file, 'r') as f:
+            with open(temp_store_file) as f:
                 leaf_dirs = json.load(f)
 
     if leaf_dirs is None:
@@ -64,10 +74,15 @@ def process_whole_dir_tree(root_dir: str, query_keys: list, store_temp_leafdirs:
 
     if store_temp_leafdirs:
         if not os.path.isfile(temp_store_file):
-            with open(temp_store_file, 'w') as f:
+            with open(temp_store_file, "w") as f:
                 json.dump(leaf_dirs, f)
 
-    meta_data = process_map(leaf_dirs, partial(query_relevant_information_single_dir, query_keys=query_keys), max_workers=num_workers, desc="Retrieve MetaData from dirs")
+    meta_data = process_map(
+        leaf_dirs,
+        partial(query_relevant_information_single_dir, query_keys=query_keys),
+        max_workers=num_workers,
+        desc="Retrieve MetaData from dirs",
+    )
     final_meta_data = {}
     could_not_process = []
     for d, m in zip(leaf_dirs, meta_data):
@@ -78,24 +93,31 @@ def process_whole_dir_tree(root_dir: str, query_keys: list, store_temp_leafdirs:
 
     return final_meta_data, could_not_process
 
-def recursive_query_information(root_dir: str, output_path: str, query_keys: list, store_temp_leafdirs: bool, num_workers: int=10):
-    final_meta_data, could_not_process = process_whole_dir_tree(root_dir=root_dir, query_keys=query_keys, store_temp_leafdirs=store_temp_leafdirs, num_workers=num_workers)
 
-    logger.warn(f"Could not process the following directories (they don't contain dicom files):\n\t{'\n\t- '.join(could_not_process)}")
+def recursive_query_information(
+    root_dir: str, output_path: str, query_keys: list, store_temp_leafdirs: bool, num_workers: int = 10
+):
+    final_meta_data, could_not_process = process_whole_dir_tree(
+        root_dir=root_dir, query_keys=query_keys, store_temp_leafdirs=store_temp_leafdirs, num_workers=num_workers
+    )
+    message_files = "\n\t- ".join(could_not_process)
 
-    with open(output_path, 'w') as f:
+    logger.warn("Could not process the following directories (they don't contain dicom files):\n\t" + message_files)
+
+    with open(output_path, "w") as f:
         if output_path.endswith(".yaml") or output_path.endswith(".yml"):
             yaml.dump(final_meta_data, f)
         elif output_path.endswith(".json"):
-            json.dum(final_meta_data, f)
+            json.dump(final_meta_data, f)
         else:
-            raise ValueError(f"Could not estimate filetype from file-extension. Supported are JSON (.json) and YAML (.yaml or .yml) but got {output_path}")
+            raise ValueError(
+                f"Could not estimate filetype from file-extension. Supported are JSON (.json) and YAML (.yaml or .yml) but got {output_path}"
+            )
+
 
 def _main():
     CLI(recursive_query_information)
 
 
-    
-
-        
-        
+if __name__ == "__main__":
+    _main()

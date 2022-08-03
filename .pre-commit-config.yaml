@@ -94,6 +94,8 @@ repos:
     rev: 'v0.961'
     hooks:
     - id: mypy
+      additional_dependencies:
+        - types-PyYAML
 
   - repo: https://github.com/MarcoGorelli/absolufy-imports
     rev: v0.3.1
