@@ -42,6 +42,7 @@ def find_leaf_dirs(directory):
 
 
 def query_relevant_information_single_dir(leaf_dir: str, query_keys: list):
+    breakpoint()
     meta_data = {}
     for f in items_in_dir(leaf_dir)[1]:
         try:
@@ -79,7 +80,6 @@ def process_whole_dir_tree(
                 json.dump(leaf_dirs, f)
 
     func = partial(query_relevant_information_single_dir, query_keys=query_keys)
-    breakpoint()
 
     if num_workers > 0:
         meta_data = process_map(
