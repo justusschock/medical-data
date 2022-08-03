@@ -42,7 +42,6 @@ def find_leaf_dirs(directory):
 
 
 def query_relevant_information_single_dir(leaf_dir: str, query_keys: list):
-    breakpoint()
     meta_data = {}
     for f in items_in_dir(leaf_dir)[1]:
         try:
@@ -78,8 +77,6 @@ def process_whole_dir_tree(
         if not os.path.isfile(temp_store_file):
             with open(temp_store_file, "w") as f:
                 json.dump(leaf_dirs, f)
-
-    breakpoint()
 
     func = partial(query_relevant_information_single_dir, query_keys=query_keys)
 
