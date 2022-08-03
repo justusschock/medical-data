@@ -80,8 +80,9 @@ def process_whole_dir_tree(root_dir: str, query_keys: list, store_temp_leafdirs:
 
 def recursive_query_information(root_dir: str, output_path: str, query_keys: list, store_temp_leafdirs: bool, num_workers: int=10):
     final_meta_data, could_not_process = process_whole_dir_tree(root_dir=root_dir, query_keys=query_keys, store_temp_leafdirs=store_temp_leafdirs, num_workers=num_workers)
+    message_files = "\n\t- ".join(could_not_process)
 
-    logger.warn(f"Could not process the following directories (they don't contain dicom files):\n\t{'\n\t- '.join(could_not_process)}")
+    logger.warn("Could not process the following directories (they don't contain dicom files):\n\t" + message_files)
 
     with open(output_path, 'w') as f:
         if output_path.endswith(".yaml") or output_path.endswith(".yml"):
