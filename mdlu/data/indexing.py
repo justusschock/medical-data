@@ -1,11 +1,12 @@
-from pydicom import dcmread
-import os
-from loguru import logger
-import tempfile
-import yaml
 import json
-from tqdm.contrib.concurrent import process_map
+import os
+import tempfile
+
+import yaml
 from jsonargparse import CLI
+from loguru import logger
+from pydicom import dcmread
+from tqdm.contrib.concurrent import process_map
 
 
 def items_in_dir(directory: str):
@@ -56,7 +57,7 @@ def process_whole_dir_tree(root_dir: str, query_keys: list, store_temp_leafdirs:
         temp_store_file = os.path.join(temp_path, "leafdirs_" + os.path.split(root_dir)[1] + ".json")
 
         if os.path.isfile(temp_store_file):
-            with open(temp_store_file, 'r') as f:
+            with open(temp_store_file) as f:
                 leaf_dirs = json.load(f)
 
     if leaf_dirs is None:
@@ -96,7 +97,7 @@ def _main():
     CLI(recursive_query_information)
 
 
-    
 
-        
-        
+
+
+
