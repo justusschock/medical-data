@@ -87,7 +87,7 @@ def process_whole_dir_tree(
     could_not_process = []
     for d, m in zip(leaf_dirs, meta_data):
         if m:
-            final_meta_data[d] = m
+            final_meta_data[str(d).replace(str(root_dir), "")] = m
         else:
             could_not_process.append(d)
 
