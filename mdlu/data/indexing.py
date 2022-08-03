@@ -7,6 +7,7 @@ from jsonargparse import CLI
 from loguru import logger
 from pydicom import dcmread
 from tqdm.contrib.concurrent import process_map
+from functools import partial
 
 
 def items_in_dir(directory: str):
@@ -89,7 +90,7 @@ def recursive_query_information(root_dir: str, output_path: str, query_keys: lis
         if output_path.endswith(".yaml") or output_path.endswith(".yml"):
             yaml.dump(final_meta_data, f)
         elif output_path.endswith(".json"):
-            json.dum(final_meta_data, f)
+            json.dump(final_meta_data, f)
         else:
             raise ValueError(f"Could not estimate filetype from file-extension. Supported are JSON (.json) and YAML (.yaml or .yml) but got {output_path}")
 
