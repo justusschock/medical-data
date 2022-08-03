@@ -41,7 +41,8 @@ test = [
 "Bug Reports" = "https://github.com/justusschock/medical-dl-utils/issues"
 
 [options.entry_points.console_scripts]
-mdlu-data-index = mdlu.data.indexing:main
+console_scripts =
+    mdlu-data-index = mdlu.data.indexing:main
 
 [build-system]
 requires = [
