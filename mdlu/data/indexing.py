@@ -42,7 +42,7 @@ def find_leaf_dirs(directory):
 
 def query_relevant_information_single_dir(leaf_dir: str, query_keys: list):
     meta_data = {}
-    for f in items_in_dir(leaf_dir)[0]:
+    for f in items_in_dir(leaf_dir)[1]:
         try:
             dcm = dcmread(f)
             for k in query_keys:
