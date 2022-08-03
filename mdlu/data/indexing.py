@@ -89,7 +89,7 @@ def process_whole_dir_tree(
             desc="Retrieve MetaData from dirs",
         )
     else:
-        meta_data = map(func, tqdm(lead_dirs, desc="Retrieve MetaData from dirs"))
+        meta_data = map(func, tqdm(leaf_dirs, desc="Retrieve MetaData from dirs"))
     final_meta_data = {}
     could_not_process = []
     for d, m in zip(leaf_dirs, meta_data):
