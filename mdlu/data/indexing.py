@@ -8,6 +8,7 @@ from jsonargparse import CLI
 from loguru import logger
 from pydicom import dcmread
 from tqdm.contrib.concurrent import process_map
+from tqdm import tqdm
 
 
 def items_in_dir(directory: str):
@@ -77,12 +78,18 @@ def process_whole_dir_tree(
             with open(temp_store_file, "w") as f:
                 json.dump(leaf_dirs, f)
 
-    meta_data = process_map(
-        partial(query_relevant_information_single_dir, query_keys=query_keys),
-        leaf_dirs,
-        max_workers=num_workers,
-        desc="Retrieve MetaData from dirs",
-    )
+    func = partial(query_relevant_information_single_dir, query_keys=query_keys)
+    breakpoint()
+
+    if num_workers > 0:
+        meta_data = process_map(
+            func,
+            leaf_dirs,
+            max_workers=num_workers,
+            desc="Retrieve MetaData from dirs",
+        )
+    else:
+        meta_data = map(func, tqdm(lead_dirs, desc="Retrieve MetaData from dirs"))
     final_meta_data = {}
     could_not_process = []
     for d, m in zip(leaf_dirs, meta_data):
