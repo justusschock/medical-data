@@ -47,7 +47,9 @@ def query_relevant_information_single_dir(leaf_dir: str, query_keys: list):
         try:
             dcm = dcmread(f)
             for k in query_keys:
-                meta_data[k] = getattr(dcm, k)
+                attr = getattr(dcm, k, None)
+                if attr is not None:
+                    meta_data[k] = attr
             break
         except:
             continue
