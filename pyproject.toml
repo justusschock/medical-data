@@ -40,10 +40,6 @@ test = [
 "Repository" = "https://github.com/justusschock/medical-dl-utils"
 "Bug Reports" = "https://github.com/justusschock/medical-dl-utils/issues"
 
-[options.entry_points.console_scripts]
-console_scripts =
-    mdlu-data-index = mdlu.data.indexing:main
-
 [build-system]
 requires = [
     "setuptools>=62",

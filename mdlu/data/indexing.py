@@ -96,3 +96,6 @@ def recursive_query_information(root_dir: str, output_path: str, query_keys: lis
 
 def _main():
     CLI(recursive_query_information)
+
+if __name__ == "__main__":
+    _main()
