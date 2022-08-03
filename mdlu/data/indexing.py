@@ -34,7 +34,7 @@ def find_leaf_dirs(directory):
         if subdirs:
             dirs_to_process.extend(subdirs)
         else:
-            leaf_dirs.append(directory)
+            leaf_dirs.append(curr_dir)
 
     logger.debug(f"Sort {len(leaf_dirs)} leafdirs")
     return sorted(leaf_dirs)
