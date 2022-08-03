@@ -1,13 +1,13 @@
 import json
 import os
 import tempfile
+from functools import partial
 
 import yaml
 from jsonargparse import CLI
 from loguru import logger
 from pydicom import dcmread
 from tqdm.contrib.concurrent import process_map
-from functools import partial
 
 
 def items_in_dir(directory: str):
