@@ -10,7 +10,7 @@ from tqdm.contrib.concurrent import process_map
 
 
 def items_in_dir(directory: str):
-    subdirs, files = []
+    subdirs, files = [], []
     for x in os.listdir(directory):
         full_x = os.path.join(directory, x)
         if os.path.isdir(full_x):
