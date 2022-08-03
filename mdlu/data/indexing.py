@@ -122,7 +122,7 @@ def recursive_query_information(
 
 
 def _main():
-    CLI(recursive_query_information)
+    CLI(recursive_query_information, as_positional=False)
 
 
 if __name__ == "__main__":
