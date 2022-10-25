@@ -22,7 +22,7 @@ dependencies = [
     "psutil < 5.9.2",
     "torchio > 0.18.56, < 0.18.79",
     "pytorch-lightning >=1.5, < 1.6.5",
-    "monai >=0.7, < 0.8.2",
+    "monai >= 0.7, < 1.0.2",
     "loguru == 0.6.0",
     "pydicom",
     "jsonargparse",
