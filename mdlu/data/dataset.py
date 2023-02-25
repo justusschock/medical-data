@@ -195,6 +195,8 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
 
     pre_stats_trafo = tio.transforms.ToCanonical()
 
+    rounding_decimals = 3  # rounds decimals to avoid having every intensity in dataset state
+
     spacings: torch.Tensor
     spatial_shapes: torch.Tensor
     intensity_counts: Counter
@@ -356,7 +358,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             setattr(self, name, label_stats[name])
 
     @staticmethod
-    def get_single_image_stats(image: tio.data.Image) -> Any | ImageStats:
+    def get_single_image_stats(image: tio.data.Image, rounding_decimals: int = 3) -> Any | ImageStats:
         """Gets the image statistics for a single image.
 
         Args:
@@ -364,7 +366,9 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         Returns:
             The image statistics (spacing, spatial_shape, unique values, occurence counts).
         """
-        uniques, counts = image.tensor[image.tensor > image.tensor.min()].unique(return_counts=True)
+        uniques, counts = (
+            image.tensor[image.tensor > image.tensor.min()].round(rounding_decimals).unique(return_counts=True)
+        )
         uniques, counts = uniques.tolist(), counts.tolist()
 
         return ImageStats(image.spacing, image.spatial_shape, uniques, counts, image.tensor.size(0))
@@ -462,7 +466,12 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         else:
             label = None
 
-        stats = deepcopy((self.get_single_image_stats(image), self.get_single_label_stats(label)))
+        stats = deepcopy(
+            (
+                self.get_single_image_stats(image, rounding_decimals=self.rounding_decimals),
+                self.get_single_label_stats(label),
+            )
+        )
         del subject_copy
         del image
         del label
