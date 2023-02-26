@@ -18,11 +18,11 @@ classifiers = [
 ]
 
 dependencies = [
-    "torchio > 0.18.56, < 0.18.79",
     "pytorch-lightning >=1.5, < 1.6.5",
     "monai >=0.7, < 0.8.2",
-    "torch >= 1.9",
     "psutil < 5.9.4",
+    "torch >= 1.9",
+    "torchio > 0.18.56, < 0.18.88",
     "pytorch-lightning >=1.5",
     "loguru >= 0.6.0",
     "pydicom",
