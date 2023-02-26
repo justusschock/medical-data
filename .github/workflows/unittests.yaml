@@ -16,6 +16,8 @@ jobs:
       matrix:
         os: [ubuntu-18.04, windows-2019, macOS-12]
         python-version: ["3.8", "3.9", "3.10", "3.11"]
+        exclude:
+          - { "python-version": "3.11", "os": "macOS-12" } # no  torch version available as of now
 
     timeout-minutes: 40
 
