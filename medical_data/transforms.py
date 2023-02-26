@@ -22,7 +22,7 @@ import torchio as tio
 from torch.nn import functional as F
 from torchio.transforms.preprocessing.spatial.resample import Resample
 
-from mdlu.data.modality import ImageModality
+from medical_data.modality import ImageModality
 
 __all__ = [
     "DefaultPreprocessing",

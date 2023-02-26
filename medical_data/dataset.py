@@ -34,8 +34,8 @@ import tqdm
 from loguru import logger
 from tqdm.contrib.concurrent import process_map
 
-from mdlu.data.modality import ImageModality
-from mdlu.utils import PyTorchJsonDecoder, PyTorchJsonEncoder, tqdm_logging_helper
+from medical_data.modality import ImageModality
+from medical_data.utils import PyTorchJsonDecoder, PyTorchJsonEncoder, tqdm_logging_helper
 
 ImageStats = namedtuple(
     "ImageStats", ("spacing", "spatial_shape", "unique_intensities", "intensity_counts", "num_channels")

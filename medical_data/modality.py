@@ -14,7 +14,10 @@
 
 from __future__ import annotations
 
-from pytorch_lightning.utilities.enums import LightningEnum
+try:
+    from lightning.pytorch.utilities.enums import LightningEnum
+except ImportError:
+    from pytorch_lightning.utilities.enums import LightningEnum
 
 __all__ = ["ImageModality"]
 

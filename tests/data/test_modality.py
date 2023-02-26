@@ -14,7 +14,7 @@
 
 import pytest
 
-from mdlu.data.modality import ImageModality
+from medical_data.modality import ImageModality
 
 
 @pytest.mark.parametrize("modality, expected", [("photograph", 0), ("xray", 1), ("mr", 2), ("ct", 3)])

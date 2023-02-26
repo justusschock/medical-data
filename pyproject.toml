@@ -1,9 +1,9 @@
 [project]
 dynamic = ["version"]
-name = "medical_dl_utils"
+name = "medical_data"
 description = "Helpful utilities for deep learning in medical image analysis/medical image computing"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 license = {file = "LICENSE"}
 keywords = ["deep learning", "machine learning", "pytorch", "medical", "healthcare", "AI"]
 authors = [
@@ -21,7 +21,8 @@ dependencies = [
     "torch >= 1.9, < 1.12",
     "psutil < 5.9.2",
     "torchio > 0.18.56, < 0.18.79",
-    "pytorch-lightning >= 1.5, < 1.7.8",
+    "lightning >= 1.5, < 2.0",
+    "lightning-utilities >=0.5, <0.8",
     "monai >= 0.7, < 1.1.1",
     "loguru == 0.6.0",
     "psutil < 5.9.5",
@@ -41,9 +42,9 @@ test = [
 
 
 [project.urls]
-"Homepage" = "https://github.com/justusschock/medical-dl-utils"
-"Repository" = "https://github.com/justusschock/medical-dl-utils"
-"Bug Reports" = "https://github.com/justusschock/medical-dl-utils/issues"
+"Homepage" = "https://github.com/justusschock/medical-data"
+"Repository" = "https://github.com/justusschock/medical-data"
+"Bug Reports" = "https://github.com/justusschock/medical-data/issues"
 
 [build-system]
 requires = [
@@ -70,7 +71,7 @@ order_by_type = "False"
 
 [tool.black]
 line-length = 120
-target_version = ["py37", "py38", "py39"]
+target_version = ["py38", "py39", "py310", "py311"]
 
 [tool.distutils.bdist_wheel]
 universal = true

@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from typing import Any, Generator, Mapping
 
 import torch
-from pytorch_lightning.utilities.apply_func import apply_to_collection
+from lightning_utilities.core.apply_func import apply_to_collection
 from tqdm import tqdm
 
 __all__ = [

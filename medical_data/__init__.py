@@ -11,13 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-__version__ = "0.1.7"
-
-from mdlu.data import AbstractDataset, AbstractDiscreteLabelDataset, ImageModality
+from medical_data.dataset import AbstractDataset, AbstractDiscreteLabelDataset 
+from medical_data.indexing import 
+from medical_data.modality import ImageModality
+from medical_data.moving_avg import MovingAverage
+from medical_data.single_class import SingleClassMetric
 
 __all__ = [
-    "ImageModality",
-    "AbstractDataset",
-    "AbstractDiscreteLabelDataset",
+    "MovingAverage",
+    "SingleClassMetric",
 ]
