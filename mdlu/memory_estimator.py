@@ -37,7 +37,6 @@ def mb2b(x: float) -> float:
 
 class MemoryEstimator:
     def __init__(self, device_id: int = 0, mixed_precision: bool = False, offset: int = 1) -> None:  # 1mb
-
         self.device_id = device_id
         self.device_props = torch.cuda.get_device_properties(device_id)
         self.offset = offset

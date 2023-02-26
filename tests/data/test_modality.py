@@ -23,7 +23,7 @@ def test_modality_from_str(modality, expected):
 
 
 def test_modality_from_str_invalid():
-    with pytest.raises(ValueError, match="invalid is not a valid image modality"):
+    with pytest.raises(ValueError, match="Invalid match: expected one of \['PHOTOGRAPH', 'XRAY', 'MR', 'CT'\], but got invalid."):
         ImageModality.from_str("invalid")
 
 
