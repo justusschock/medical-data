@@ -38,3 +38,5 @@ __all__ = [
     "RescaleIntensityPercentiles",
     "SingleClassMetric",
 ]
+
+__version__ = "0.2.0dev"
