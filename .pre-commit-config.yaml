@@ -29,7 +29,7 @@ repos:
     hooks:
       - id: pyupgrade
         args:
-          - --py37-plus
+          - --py38-plus
         name: Upgrade code
 
   - repo: https://github.com/PyCQA/docformatter
@@ -59,7 +59,7 @@ repos:
           - --expand-star-imports
 
   - repo: https://github.com/PyCQA/isort
-    rev: 5.11.4
+    rev: 5.12.0
     hooks:
       - id: isort
         name: Format imports
