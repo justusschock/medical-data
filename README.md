@@ -2,7 +2,7 @@
 
 [![UnitTest](https://github.com/justusschock/medical-data/actions/workflows/unittests.yaml/badge.svg)](https://github.com/justusschock/medicaldata/actions/workflows/unittests.yaml) [![Build Package](https://github.com/justusschock/medical-data/actions/workflows/package_build.yaml/badge.svg)](https://github.com/justusschock/medical-data/actions/workflows/package_build.yaml) ![PyPI](https://img.shields.io/pypi/v/medical-data?color=grene) [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/justusschock/medical-data/main.svg)](https://results.pre-commit.ci/latest/github/justusschock/medical-data/main)
 
-This repository contains utilities for training and evaluating deep learning models in medical image analysis that are not specific to certain tasks.
+This repository contains utilities for handling data in medical image analysis that are not specific to certain tasks.
 
 So far it consists of 2 major parts:
 An abstract Dataset API built on top of `torch.utils.data.Dataset` and `torchio.data.Subject` as well as general transforms for this kind of data.
@@ -22,7 +22,7 @@ For an install of published packages, use the command
 
 ```bash
 
-    pip install medical-dl-utils
+    pip install medical-data
 
 ```
 
@@ -30,7 +30,7 @@ To install from the (cloned) repository, use the command
 
 ```bash
 
-    pip install PATH/TO/medical-dl-utils
+    pip install PATH/TO/medical-data
 
 ```
 
@@ -40,13 +40,6 @@ You can also install the package directly from GitHub by running
 
 ```bash
 
-    pip install git+https://github.com/justusschock/medical-dl-utils.git
+    pip install git+https://github.com/justusschock/medical-data.git
 
 ```
-
-## Docker Images
-
-We provide a docker image for easy usage of the package and as a base image for other projects.
-
-The file for this image can be found at `dockers/Dockerfile`. We provide both, a CPU-only and a CUDA-enabled image based on the NVIDIA NGC PyTorch image.
-These images can be found on [DockerHub](https://hub.docker.com/repository/docker/justusschock/medical-dl-utils).
