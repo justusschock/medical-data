@@ -48,6 +48,7 @@ specific_logger = logger.bind(name="dataset")
 specific_logger.remove()
 specific_logger.add(tqdm_logging_helper, colorize=True)
 
+
 # TODO: Add possibility to also add intensity mean and std manually
 class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
     """Abstract Dataset class defining the interface for all datasets. For usage, subclass this class and implement
@@ -218,7 +219,6 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         target_spacing: Sequence[float] | torch.Tensor | None = None,
         target_size: Sequence[int] | torch.Tensor | None = None,
     ):
-
         """
 
         Args:
@@ -645,7 +645,6 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         Returns:
             The state dict of the label statistics.
         """
-
         return {k: getattr(self, k) for k in self.label_stat_attr_keys}
 
     def state_dict(self) -> dict[str, dict[str, Any] | str]:
@@ -733,7 +732,6 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             subject_cls_path = subject_meta.pop("TORCHIO_SUBJECT_CLASS", "")
 
             if subject_cls_path:
-
                 cls_module_path, cls_name = subject_cls_path.rsplit(".", 1)
                 cls_module = importlib.import_module(cls_module_path)
 
@@ -864,7 +862,6 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         Returns:
             The standard deviation of the image intensity values.
         """
-
         n = sum(self.intensity_counts.values())
         # normal intensity calculation without allocating all the occurences to save memory
         return (

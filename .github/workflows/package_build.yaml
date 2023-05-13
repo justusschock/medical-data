@@ -46,10 +46,10 @@ jobs:
         run: pip install ./dist/*.whl
 
       - name: Import Package
-        run: python -c "import mdlu; print(mdlu.__version__)"
+        run: python -c "import medical_data; print(medical_data.__version__)"
 
       - name: Install Package Sdist
         run: pip install ./dist/*.tar.gz --force-reinstall
 
       - name: Import Package
-        run: python -c "import mdlu; print(mdlu.__version__)"
+        run: python -c "import medical_data; print(medical_data.__version__)"
