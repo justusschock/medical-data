@@ -297,7 +297,6 @@ class ResampleAndCropOrPad(tio.transforms.Transform):
         Returns:
             The transformed subject.
         """
-
         # handle each image in subject individually to compensate
         # for misalignment of images in checks inbetween the steps!
         for k, v in subject.get_images_dict(intensity_only=False).items():
@@ -330,7 +329,6 @@ class CropToNonZero(tio.transforms.Transform):
                 as :attr`tensor`
             **padding_kwargs: keyword arguments to controll the necessary padding
         """
-
         centers, ranges = extract_nonzero_bounding_box_from_tensor(image.tensor[None])
 
         low = (centers - ranges / 2)[0].cpu().detach().numpy()
@@ -423,7 +421,6 @@ class NNUnetNormalization(tio.transforms.ZNormalization):
             image_name: The name of the image to apply the normalization to.
             mask: The mask to use for the normalization.
         """
-
         # no image modality is given, use default (non-CT) behavior
         if self.image_modality is None or self.image_modality != ImageModality.CT:
             # not more than 25% of the voxels are cropped away
@@ -472,7 +469,6 @@ class LabelToCategorical(tio.transforms.preprocessing.label.label_transform.Labe
         Returns:
             The transformed subject.
         """
-
         for k, v in self.get_images_dict(subject).items():
             if isinstance(v, tio.data.LabelMap):
                 v.set_data(v.data.argmax(0).unsqueeze(0))
