@@ -367,7 +367,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             The image statistics (spacing, spatial_shape, unique values, occurence counts).
         """
         uniques, counts = (
-            image.tensor[image.tensor > image.tensor.min()].round(rounding_decimals).unique(return_counts=True)
+            image.tensor[image.tensor > image.tensor.min()].float().round(decimals=rounding_decimals).unique(return_counts=True)
         )
         uniques, counts = uniques.tolist(), counts.tolist()
 
@@ -467,9 +467,9 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             label = None
 
         stats = deepcopy(
-            (
-                self.get_single_image_stats(image, rounding_decimals=self.rounding_decimals),
-                self.get_single_label_stats(label),
+            tuple(
+                [self.get_single_image_stats(image, rounding_decimals=self.rounding_decimals)]
+                + ([self.get_single_label_stats(label=label)] if label is not None else [None])
             )
         )
         del subject_copy
@@ -653,9 +653,9 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         Returns:
             The state dict of the statistics.
         """
-        from mdlu import __version__ as mdlu_version
+        from medical_data import __version__ as data_version
 
-        return {"image": self.image_state_dict(), "label": self.label_state_dict(), "version": mdlu_version}
+        return {"image": self.image_state_dict(), "label": self.label_state_dict(), "version": data_version}
 
     def save_preprocessed(self, *subjects, save_path, preprocessing_trafo, num_procs) -> None:
         """Preprocesses and saves all subjects in the dataset to a json file for metadata, an image and a label
@@ -974,10 +974,10 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
         """
         return {
             "class_values": torch.tensor(
-                sorted(set(chain.from_iterable(map(itemgetter("class_values"), label_stats))))
+                sorted(set(chain.from_iterable(map(itemgetter("class_values"), filter(lambda x: x is not None, label_stats)))))
             ),
             "spatial_label_shapes": torch.tensor(
-                sorted(set(chain.from_iterable(map(itemgetter("spatial_shape"), label_stats)))), dtype=torch.long
+                sorted(set(chain.from_iterable(map(itemgetter("spatial_shape"), filter(lambda x: x is not None, label_stats))))), dtype=torch.long
             ),
         }
 
@@ -1032,7 +1032,7 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
         Returns:
             The default preprocessing for the dataset.
         """
-        from mdlu.transforms import DefaultPreprocessing
+        from medical_data.transforms import DefaultPreprocessing
 
         return tio.transforms.Compose(
             [
