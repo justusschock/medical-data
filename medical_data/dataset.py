@@ -210,7 +210,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         image_modality: ImageModality | int | str,
         image_stat_key: str | None = None,
         label_stat_key: str | None = None,
-        preprocessing: (tio.transforms.Transform | Callable[[tio.data.Subject], tio.data.Subject] | None) = "default",
+        preprocessing: tio.transforms.Transform | Callable[[tio.data.Subject], tio.data.Subject] | None = "default",
         augmentation: tio.transforms.Transform | Callable[[tio.data.Subject], tio.data.Subject] | None = None,
         statistic_collection_nonzero: bool = False,
         num_stat_collection_procs: int = 0,
@@ -367,7 +367,10 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
             The image statistics (spacing, spatial_shape, unique values, occurence counts).
         """
         uniques, counts = (
-            image.tensor[image.tensor > image.tensor.min()].float().round(decimals=rounding_decimals).unique(return_counts=True)
+            image.tensor[image.tensor > image.tensor.min()]
+            .float()
+            .round(decimals=rounding_decimals)
+            .unique(return_counts=True)
         )
         uniques, counts = uniques.tolist(), counts.tolist()
 
@@ -809,10 +812,8 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
     def num_channels(self) -> int:
         if self.num_channels_all_images.unique(return_counts=False) == 1:
             return self.num_channels_all_images[0].item()
-        raise RuntimeError(
-            f"""All images need to have the same number of channels,
-            but got images with the following numbers of channels: {self.num_channels_all_images}"""
-        )
+        raise RuntimeError(f"""All images need to have the same number of channels,
+            but got images with the following numbers of channels: {self.num_channels_all_images}""")
 
     @property
     def sizes_after_resampling(self) -> torch.Tensor:
@@ -865,10 +866,7 @@ class AbstractDataset(tio.data.SubjectsDataset, metaclass=ABCMeta):
         n = sum(self.intensity_counts.values())
         # normal intensity calculation without allocating all the occurences to save memory
         return (
-            (
-                sum(float(k) * float(v) ** 2 for k, v in self.intensity_counts.items())
-                - n * self.mean_intensity_value**2
-            )
+            (sum(float(k) * float(v) ** 2 for k, v in self.intensity_counts.items()) - n * self.mean_intensity_value**2)
             / (n - 1)
         ).sqrt()
 
@@ -974,10 +972,23 @@ class AbstractDiscreteLabelDataset(AbstractDataset):
         """
         return {
             "class_values": torch.tensor(
-                sorted(set(chain.from_iterable(map(itemgetter("class_values"), filter(lambda x: x is not None, label_stats)))))
+                sorted(
+                    set(
+                        chain.from_iterable(
+                            map(itemgetter("class_values"), filter(lambda x: x is not None, label_stats))
+                        )
+                    )
+                )
             ),
             "spatial_label_shapes": torch.tensor(
-                sorted(set(chain.from_iterable(map(itemgetter("spatial_shape"), filter(lambda x: x is not None, label_stats))))), dtype=torch.long
+                sorted(
+                    set(
+                        chain.from_iterable(
+                            map(itemgetter("spatial_shape"), filter(lambda x: x is not None, label_stats))
+                        )
+                    )
+                ),
+                dtype=torch.long,
             ),
         }
 
